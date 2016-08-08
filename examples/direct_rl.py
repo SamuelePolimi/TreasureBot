@@ -73,7 +73,7 @@ f = tf.nn.tanh
 
 batch_size = 100
 n_batch = n_episodes / batch_size
-n_iter = 50000
+n_iter = 1000
 
 gamma = 1 #discount factor
 c = 0.1
