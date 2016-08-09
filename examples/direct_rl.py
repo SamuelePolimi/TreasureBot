@@ -54,9 +54,16 @@ z = (z - mean)/ v"""
 min_ = np.min(z)
 max_ = np.max(z)
 
+def norm(x):
+    global min_, max_
+    return (x - min_)/(max_-min_) * 2.
 
-z = (z - min_)/(max_-min_) * 2.
-z_test = (z_test - min_)/(max_-min_) * 2.
+def denorm(x):
+    global min_, max_
+    return min_ + x*(max_-min_)/2.
+    
+z = norm(z)
+z_test = norm(z_test)
 
 n_episodes, series_length = z.shape
 test_size, _ = z_test.shape
@@ -66,17 +73,17 @@ test_size, _ = z_test.shape
 # Model variables
 #------------------------------------------------------------------------------
 
-n_neuron = 10 #number of neuron each layer
+n_neuron = 30 #number of neuron each layer
 n_layer = 5 #number of neuron of the network
 #The last layer will be connected to the first one to implement the recurrent model
 f = tf.nn.tanh
 
-batch_size = 100
+batch_size = 2
 n_batch = n_episodes / batch_size
 n_iter = 1000
 
 gamma = 1 #discount factor
-c = 0.1
+c = 0.5
 
 #------------------------------------------------------------------------------
 # Model definition
@@ -103,20 +110,22 @@ def u(X, W_x, B_x):
 
 #this represent the reward signal
 def d(u,c,  z_t, z_tm1):
-    return u * z_t - c*(z_t - z_tm1)
+    return u * z_t - c*tf.abs(z_t - z_tm1)
     
-std_ = 3.
+std_ = 1./np.sqrt(n_neuron + 0.0)#n_neuron / 3.
 m_=0.
 #weight and biases of the network
-W_x = [tf.Variable(tf.random_normal([1,n_neuron],m_,std_))]
+W_x = [tf.Variable(tf.random_normal([1,n_neuron],m_,1.))]
 for _ in range(1,n_layer):
     W_x.append(tf.Variable(tf.random_normal([n_neuron,n_neuron],m_,std_)))
-B_x = [ tf.Variable(tf.random_normal([n_neuron],m_,std_))]
+B_x = [ tf.Variable(tf.random_normal([n_neuron],m_,1.))]
 for _ in range(1,n_layer):
     B_x.append(tf.Variable(tf.random_normal([n_neuron],m_,std_)))
 W_m = tf.Variable(tf.random_normal([n_neuron,n_neuron],m_,std_))
 W_out = tf.Variable(tf.random_normal([n_neuron,1],m_,std_))
 B_out = tf.Variable(tf.random_normal([1],m_,std_))
+
+
 
 #input
 Z = []
@@ -134,7 +143,7 @@ for i in xrange(1,n_layer):
     h = add_layer(h, W_x[i], B_x[i],f)
 out_temp = u(h,W_out,B_out)
 out.append(out_temp)
-reward.append(tf.reduce_sum(d(out_temp, c, Z[0], 0)))
+reward.append(tf.reduce_sum(d(out_temp, c, denorm(Z[0]), 0)))
 
 
 for j in xrange(1,series_length):
@@ -143,11 +152,11 @@ for j in xrange(1,series_length):
         h = add_layer(h, W_x[i], B_x[i],f)
     out_temp = u(h,W_out,B_out)
     out.append(out_temp)
-    reward.append(tf.reduce_sum(d(out_temp, c, Z[j], Z[j-1])))
+    reward.append(tf.reduce_sum(d(out_temp, c, denorm(Z[j]), denorm(Z[j-1]))))
 
-r = 0 
+r = 0.
 for i in xrange(series_length):
-    r = r + reward[i] * (gamma ** i)
+    r = r + reward[i] #* (gamma ** i)
 
 # we should max r, or the same min -r
 optimizer = tf.train.RMSPropOptimizer(learning_rate=0.001).minimize(-r)
@@ -161,7 +170,7 @@ with tf.Session() as sess:
         
         #------------TRAIN        
         m_rew = 0
-        np.random.shuffle(z)
+        #np.random.shuffle(z)
         for batch in xrange(n_batch):
             feed_dict = {}
             for i in range(series_length):
@@ -169,7 +178,7 @@ with tf.Session() as sess:
             #print "expected", np.array([y_data[:]])
             rew, _= sess.run( [r, optimizer],feed_dict=feed_dict)
             n_rew = rew/ (batch_size + 0.0)
-            m_rew += min_  + n_rew * (max_-min_) 
+            m_rew += n_rew
             #print "predicted", m
             #print "iter",it, "batch", batch,"reward:", n_rew
         #------------TEST
@@ -178,5 +187,16 @@ with tf.Session() as sess:
             feed_dict[Z[i]] = z_test[:,i:i+1]
         rew = sess.run( [r],feed_dict=feed_dict)
         test_rew = rew[0] /(test_size + 0.0)
-        test_rew = min_  + test_rew * (max_-min_) 
         print "["+ str(it)+  "]" + "> TRAIN: " , m_rew /(n_batch + 0.0), "TEST:", test_rew
+
+    W_x_real = sess.run(W_x)
+    B_x_real = sess.run(B_x)
+    W_m_real, B_out_real, W_out_real = sess.run([W_m, B_out, W_out])
+    
+    np.save("W_x",W_x_real)
+    np.save("B_x",B_x_real)
+    np.save("W_m",W_m_real)
+    np.save("B_out", B_out_real)
+    np.save("W_out", W_out_real)
+    
+    
