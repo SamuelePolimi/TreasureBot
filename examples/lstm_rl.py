@@ -4,27 +4,26 @@ Created on Fri Jul 29 15:53:23 2016
 
 @author: samuele
 
-This is just a rough example on how to use Direct Reinforcement Learning in Stock Exchange (only one stock).
-
-Our model is a RNN which the output is 
-
-d_t = u_t * z_t - c * (u_t- u_(t-1))
-
-where u_t is bounded between -1 and 1 and means buy and sell.
-z_t is the derivate of the stock price (in practice p_t - p_(t-1))
-
-the second term of the formula above c * (u_t - u_(t-1)) represent the cost of buy a stock or sell it
-(otherwise the bot could just buy as the price arize and sell as the price decrease) 
-
-the model should just max the summation of d_t (that will be discounted through time by gamma)
-
-
-This example will be not very efficient because of the problem of the vanishing-gradient. 
-We should use LSTM, truncated Gradient descent, ... and many other technique..
+This script should solve Stock exchange with an improvement of the Direct_rl with Long Short Time Memory cell [Hochriter 1991]
+This should (partially) solve the problem of the gradient vanishing, leading to a better usage of the time dependencies
 
 
 Reference: Deep Direct Reinforcement Learning for Financial Signal Representation and Trading 
 [IEEE]
+
+Network structure
+
+
+(prices + last-action) - as input
+Shared Block
+Block1 + Block2 + Block3 + Block4    :Block1 feed the value to fill in the LSTMCell
+                                     :Block2 feed the "write value" if 1 the cell will be overwrited, if 0 no values will be written over it
+                                     :Block3 feed the "reset value" if 0 the cell will be resetted
+                                     :Block4 if 0 noone will read the output, if 1 the output will be "public"
+                                     
+LSTM
+DecisionBlock
+Outcome
 ----------------------------------------------------------------------------"""
 
 #!/usr/bin/env python
@@ -81,7 +80,7 @@ n_layer = 5 #number of neuron of the network
 #The last layer will be connected to the first one to implement the recurrent model
 f = tf.nn.tanh
 
-batch_size = 100
+batch_size = 2
 n_batch = n_episodes / batch_size
 n_iter = 150
 
@@ -92,44 +91,28 @@ series_length -= window
 #------------------------------------------------------------------------------
 # Model definition
 #------------------------------------------------------------------------------
+    
+def Block(input_, input_size, neuron_list,f, variables):
+    last_input = input_
+    last_input_size = input_size
+    for neurons in neuron_list:
+        std = 1./np.sqrt(input_size + 0.0)
+        W = tf.Variable(tf.random_normal([last_input_size,neurons],0.,std))
+        b = tf.Variable(tf.random_normal([neurons],0.,std))
+        last_input = f(tf.matmul(last_input, W) + b)
+        last_input_size = neurons
+        variables.append(W)
+        variables.append(b)
+    return last_input
 
-#the normal layer
-def add_layer(X, W_x, B_x, f):
-    return f( tf.matmul(X, W_x) + B_x)
-
-#The layer with the memory from the past
-def add_first_layer(X, W_x, B_x, M, W_m, f):
-    temp = tf.matmul(X, W_x)
-    temp += tf.matmul(M, W_m)
-    temp += B_x
-    return f( tf.matmul(X, W_x) + tf.matmul(M, W_m) + B_x)
-
-def add_base_layer(X, W_x, B_x, f):
-    return f( tf.matmul(X, W_x) + B_x)
-
-#this is the action to perform    
-def u(X, W_x, B_x):
-    #tanh is bounded between 1 and -1
-    return tf.tanh(tf.matmul(X, W_x) + B_x)
+#(content of the cell, real output)
+def Lstm(input_, write_, reset_, output_, last_lstm):
+    lstm = input_*write_ + reset_*last_lstm
+    return (lstm, lstm*output_)        
 
 #this represent the reward signal
 def d(u,c,  z_t, z_tm1):
     return u * z_t - c*tf.abs(z_t - z_tm1)
-    
-std_ = 1./np.sqrt(n_neuron + 0.0)#n_neuron / 3.
-m_=0.
-#weight and biases of the network
-W_x = [tf.Variable(tf.random_normal([window,n_neuron],m_,1./np.sqrt(window + 0.0)))]
-for _ in range(1,n_layer):
-    W_x.append(tf.Variable(tf.random_normal([n_neuron,n_neuron],m_,std_)))
-B_x = [ tf.Variable(tf.random_normal([n_neuron],m_,1.))]
-for _ in range(1,n_layer):
-    B_x.append(tf.Variable(tf.random_normal([n_neuron],m_,std_)))
-W_m = tf.Variable(tf.random_normal([n_neuron,n_neuron],m_,std_))
-W_out = tf.Variable(tf.random_normal([n_neuron,1],m_,std_))
-B_out = tf.Variable(tf.random_normal([1],m_,std_))
-
-
 
 #input
 Z_in = []
@@ -146,28 +129,33 @@ reward = []
 
 print "BUILDING THE MODEL.."
     
-h = add_base_layer(Z_in[0],W_x[0], B_x[0], f)   
+variables=[]
 
-old_out = np.zeros((1,1))
-for i in xrange(1,n_layer):
-    h = add_layer(h, W_x[i], B_x[i],f)
-out_temp = u(h,W_out,B_out)
-out.append(out_temp)
-reward.append(tf.reduce_sum(d(old_out, c, denorm(Z[0]), 0)))
-old_out = out_temp
+old_action = 0.
+lstm = np.zeros((1,10))
 
-for j in xrange(1,series_length):
-    h = add_first_layer(Z_in[j],W_x[0], B_x[0],h,W_m ,f)   
-    for i in xrange(1,n_layer):
-        h = add_layer(h, W_x[i], B_x[i],f)
-    out_temp = u(h,W_out,B_out)
-    out.append(out_temp)
-    reward.append(tf.reduce_sum(d(old_out, c, denorm(Z[j]), denorm(Z[j-1]))))
-    old_out = out_temp
+for t in xrange(series_length):
+    sharedBlock = Block(Z_in[t], window, [10]*2, tf.tanh, variables)
+    block1 = Block(sharedBlock, 10, [10]*2, tf.tanh, variables)
+    block2 = Block(sharedBlock, 10, [10]*2, tf.tanh, variables)
+    block3 = Block(sharedBlock, 10, [10]*2, tf.tanh, variables)
+    block4 = Block(sharedBlock, 10, [10]*2, tf.tanh, variables)
+    lstm, lstm_out = Lstm(block1, block2, block3, block4, lstm)
+    outerBlock = Block(lstm_out, 10, [10,1], tf.tanh, variables)
+    
+    out_temp = outerBlock
+    out.append(outerBlock)
+    
+    if t==0:
+        reward.append(d(old_action,c,denorm(Z[t]), 0.))
+    else:   
+        reward.append(d(old_action,c,denorm(Z[t]), denorm(Z[t-1])))
+        
+    old_action =out_temp
     
 r = 0.
 for i in xrange(series_length):
-    r = r + reward[i] #* (gamma ** i)
+    r = r + tf.reduce_sum(reward[i]) #* (gamma ** i)
 
 # we should max r, or the same min -r
 optimizer = tf.train.RMSPropOptimizer(learning_rate=0.001).minimize(-r)
@@ -203,14 +191,3 @@ with tf.Session() as sess:
         test_rew = rew[0] /(test_size + 0.0)
         print "["+ str(it)+  "]" + "> TRAIN: " , m_rew /(n_batch + 0.0), "TEST:", test_rew
 
-    W_x_real = sess.run(W_x)
-    B_x_real = sess.run(B_x)
-    W_m_real, B_out_real, W_out_real = sess.run([W_m, B_out, W_out])
-    
-    np.save("W_x",W_x_real)
-    np.save("B_x",B_x_real)
-    np.save("W_m",W_m_real)
-    np.save("B_out", B_out_real)
-    np.save("W_out", W_out_real)
-    np.save("min_max", [min_,max_])
-    
