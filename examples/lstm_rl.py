@@ -59,6 +59,13 @@ def retreiveParams():
 # Parameters
 #------------------------------------------------------------------------------
 
+"""----------------------------------------------------------------------------
+" All of these parameter are callable from the command line in the shape:
+" python example/lstm_rl.py <variable_name>=<value>
+" for example:
+" python example/lstm_rl.py shuffle=1 lstm_neuron=10 c=0.0013 dropout=0.8
+"---------------------------------------------------------------------------"""
+
 block_layer = 3  #number of neuron each layer
 block_neuron = 10
 base_neuron = 10
@@ -80,7 +87,9 @@ c = 0.0019
 
 dataset_folder = "apple"
 
+#length of the time serie
 len_ = 0
+#how many data can I pick up
 ds_ = 0
 
 #we help recurrent neural network giving at the same time 5 last derivates
@@ -99,7 +108,7 @@ stock_price = np.load(dataset_name)
 stock_price_test = np.load(testset_name)
 
 com = c * stock_price[:ds_,:len_]
-com_test = c * stock_price_test[:ds_,:len_]
+com_test = c * stock_price_test[:,:len_]
 
 z = stock_price[:ds_,1:len_] - stock_price[:ds_,:len_-1]
 
