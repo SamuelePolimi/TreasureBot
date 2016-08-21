@@ -101,50 +101,65 @@ retreiveParams()
 # Data reading & preformatting
 #------------------------------------------------------------------------------
 
-dataset_name = "dataset/" + dataset_folder + "/train.npy"
-testset_name = "dataset/" + dataset_folder + "/test.npy"
-
-stock_price = np.load(dataset_name)
-stock_price_test = np.load(testset_name)
-
-com = c * stock_price[:ds_,:len_]
-com_test = c * stock_price_test[:,:len_]
-
-z = stock_price[:ds_,1:len_] - stock_price[:ds_,:len_-1]
-
-print z.shape
-z_test = stock_price_test[:,1:len_] - stock_price_test[:,:len_-1]
-"""v = np.var(z)
-mean = np.mean(z)
-
-z = (z - mean)/ v"""
-min_ = np.min(z)
-max_ = np.max(z)
-
-com_min_max = (np.min(com), np.max(com))
-z_min_max = (min_,max_)
-
-def norm(x,min_max):
-    (min_,max_) = min_max
-    return (x - min_)/(max_-min_) * 2.
-
-def denorm(x,min_max):
-    (min_,max_) = min_max
-    return min_ + x*(max_-min_)/2.
+try:
+    dataset_name = "dataset/" + dataset_folder + "/train.npy"
+    testset_name = "dataset/" + dataset_folder + "/test.npy"
     
-z = norm(z, z_min_max)
-z_test = norm(z_test, z_min_max)
-
-com = norm(com, com_min_max)
-com_test = norm(com_test, com_min_max)
-
-n_episodes, series_length = z.shape
-test_size, _ = z_test.shape
-
-
-n_batch = n_episodes / batch_size
-series_length -= window
-
+    stock_price = np.load(dataset_name)
+    stock_price_test = np.load(testset_name)
+    
+    com = c * stock_price[:ds_,:len_]
+    com_test = c * stock_price_test[:,:len_]
+    
+    z = stock_price[:ds_,1:len_] - stock_price[:ds_,:len_-1]
+    
+    print z.shape
+    z_test = stock_price_test[:,1:len_] - stock_price_test[:,:len_-1]
+    """v = np.var(z)
+    mean = np.mean(z)
+    
+    z = (z - mean)/ v"""
+    min_ = np.min(z)
+    max_ = np.max(z)
+    
+    com_min_max = (np.min(com), np.max(com))
+    z_min_max = (min_,max_)
+    
+    def norm(x,min_max):
+        (min_,max_) = min_max
+        return (x - min_)/(max_-min_) * 2.
+    
+    def denorm(x,min_max):
+        (min_,max_) = min_max
+        return min_ + x*(max_-min_)/2.
+        
+    z = norm(z, z_min_max)
+    z_test = norm(z_test, z_min_max)
+    
+    com = norm(com, com_min_max)
+    com_test = norm(com_test, com_min_max)
+    
+    n_episodes, series_length = z.shape
+    test_size, _ = z_test.shape
+    
+    
+    n_batch = n_episodes / batch_size
+    series_length -= window
+except:
+    print "Error in section DATA READING & PREFORMATTING ----------------------"
+    print "\tThis is probably caused by an error on the parameter passing."
+    print "--------------------------------------------------------------------"
+    print "\tTo run this program is sufficient to type the command in the following shape:"
+    print "\tpython example/lstm_rl.py <parameter_name>=<value> ..."
+    print "\tEG:\n"
+    print "\t\tpython example/lstm_rl.py base_layer=2 shuffle=1 c=0.0018\n"
+    print "\tThe parameter names are the same of the fariables declared in the section parameters"
+    print "\tYou don't need to type all of them - the ones you don't type will be set on the default value"
+    print "\tYou also will need two dataset files (.npy) in the folder dataset/<dataset_folder>"
+    print "\tThe files in <dataset_folder> (eg: dataset/apple) should be named 'train.npy' & 'test.npy'"
+    print "\tActually in future version of this program, we will better have 'train.npy', 'validation.npy' and 'test.npy'"
+    print "\tHAVE FUN! :)"
+    print "--------------------------------------------------------------------"
 #------------------------------------------------------------------------------
 # Model definition
 #------------------------------------------------------------------------------

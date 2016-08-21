@@ -27,6 +27,8 @@ Reference: Deep Direct Reinforcement Learning for Financial Signal Representatio
 [IEEE]
 ----------------------------------------------------------------------------"""
 
+print "ALERT!!!!!"
+print "This file is useless. Instead use lstm_rl.py :)"
 #!/usr/bin/env python
 
 import tensorflow as tf
