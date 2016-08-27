@@ -108,6 +108,11 @@ try:
     stock_price = np.load(dataset_name)
     stock_price_test = np.load(testset_name)
     
+    if(ds_==0):
+        ds_ = stock_price.shape[0]
+    if(len_==0):
+        len_ = stock_price.shape[1]
+        
     com = c * stock_price[:ds_,:len_]
     com_test = c * stock_price_test[:,:len_]
     
@@ -160,6 +165,7 @@ except:
     print "\tActually in future version of this program, we will better have 'train.npy', 'validation.npy' and 'test.npy'"
     print "\tHAVE FUN! :)"
     print "--------------------------------------------------------------------"
+    exit()
 #------------------------------------------------------------------------------
 # Model definition
 #------------------------------------------------------------------------------

@@ -2,10 +2,19 @@ import sys
 import csv
 import numpy as np
 
-filename = sys.argv[1]              #name of the file
-column = int(sys.argv[2])           #select the column of interest
-jump_row = int(sys.argv[3])         #how many rows do I jump?
-
+try:
+    filename = sys.argv[1]              #name of the file
+    column = int(sys.argv[2])           #select the column of interest
+    jump_row = int(sys.argv[3])         #how many rows do I jump?
+except:
+    print """Hi, an error was catched. This means that probably you didn't insert the correct number/type of parameters
+    don't worry at all.
+    You should type:
+        python csvToNpy.py <filename> <column> <jump row>
+    where:
+        filename: is the name of the csv
+        column: is the column to select (for example the price_close)
+        jump_row: normally the first row is a title row: you could select hence jump_row=1"""
 
 prices = []
 with open(filename, 'rb') as csvfile:
@@ -44,3 +53,4 @@ nptrain = npdata[n_test:,:]
 
 np.save('train',nptrain)
 np.save('test',nptest)
+print "You'll find train.npy and test.npy in this folder. (In future, you'll find train.npy, validation.npy, test.npy)."
