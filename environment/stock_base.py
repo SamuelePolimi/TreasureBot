@@ -1,3 +1,4 @@
+import numpy as np
 class BaseStock:
         
     def savePriceList(self,length, filename):
