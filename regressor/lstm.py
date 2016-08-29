@@ -1,0 +1,202 @@
+"""----------------------------------------------------------------------------
+This regressor optimizes the gain with long short action.
+You should provide to the regressor a trainset and a validationset with the following shape:
+
+(nrow, series_length, n_series, n_features)
+
+remember that in position
+
+[i,j,k,0]
+
+we will find the actual prices at time j of the stock k, and at position
+
+[i,j,k,1]
+
+we will find the atual cost of performing a long or a short for the stock k at the time j
+
+at position: [i,j,k,l] with l!=0 and l!=1
+
+we will find the l-th features of the stock k at the time j.
+
+The shapes of this regressor is described:
+
+Network structure
+
+
+(prices + last-action) - as input
+Shared Block
+Block1 + Block2 + Block3 + Block4    :Block1 feed the value to fill in the LSTMCell
+                                     :Block2 feed the "write value" if 1 the cell will be overwrited, if 0 no values will be written over it
+                                     :Block3 feed the "reset value" if 0 the cell will be resetted
+                                     :Block4 if 0 noone will read the output, if 1 the output will be "public"
+                                     
+LSTM
+DecisionBlock
+Outcome
+
+
+----------------------------------------------------------------------------"""
+from regressor import Regressor
+import numpy as np
+import tensorflow as tf
+
+def Block(input_, input_size, neuron_list,f, variables, dropout=1.):
+    last_input = input_
+    last_input_size = input_size
+    for neurons in neuron_list:
+        std = 1./np.sqrt(input_size + 0.0)
+        W = tf.Variable(tf.random_normal([last_input_size,neurons],0.,std))
+        b = tf.Variable(tf.random_normal([neurons],0.,std))
+        last_input = f(tf.matmul(last_input, W) + b)
+        last_input = tf.nn.dropout(last_input,dropout)
+        last_input_size = neurons
+        variables.append(W)
+        variables.append(b)
+    return last_input
+
+#(content of the cell, real output)
+def Lstm(input_, write_, reset_, output_, last_lstm):
+    lstm = input_*write_ + reset_*last_lstm
+    return (lstm, lstm*output_)        
+
+def Merge(input_list, dim_list, out_dim, f,variables):
+    sum_ = np.zeros((1,out_dim))
+    for input_, dim_ in zip(input_list, dim_list):
+        std = 1./np.sqrt(dim_ + 0.0)
+        W = tf.Variable(tf.random_normal([dim_,out_dim],0.,std))
+        sum_ = sum_ + tf.matmul(input_,W)
+        variables.append(W)
+    b = tf.Variable(tf.random_normal([out_dim],0.,std))
+    variables.append(b)
+    return f(sum_+b)
+    
+#this represent the reward signal
+def d(u,c,  z_t, z_tm1):
+    return u * z_t - c*tf.abs(z_t - z_tm1)
+    
+class LSTMNet(Regressor):
+    
+    #dimension of blocks are expressed by (n_layer, n_neuron)
+    def __init__(self, sharedBoxShape, blocksShape, nLSTMCells, decisionBlockShape, train_set, validation_set, n_series, features, dropout=1.):
+        
+        self.sharedBoxShape = sharedBoxShape
+        self.blocksShape = blocksShape
+        self.nLSTMCells = nLSTMCells
+        self.decisionBlockShape = decisionBlockShape
+        assert len(train_set.shape) == 3 , "train_set should be 3 dimensional"
+        assert len(validation_set.shape) == 3, "validation_set should be 3 dimensional"
+        assert train_set.shape[1] == validation_set.shape[1], "validation and train sets should have 2nd dimension equal (serie_length)"
+        assert train_set.shape[2] == validation_set.shape[2], "validation and train sets should have 3rd dimension equal (n_serie*2 + n_features)"
+        assert train_set.shape[2] >= 2
+        
+        self.serie_length = self.train_set.shape[1]
+        assert n_series >= 1, "Provide at least one serie" 
+        assert features + n_series * 2 == self.train_set.shape[2], "the third dimension of the datasets should be equal to number of features + n_series * 2"
+        self.n_series = n_series
+        
+        self.features = features
+        self.train_set = train_set
+        self.validation_set = validation_set
+        self.dropout = dropout
+        
+        #here I find the mean of each feature
+        mean = np.mean(np.mean(train_set[:,:,0], axis=0),axis=1)
+        
+        #here I find the mean of each feature
+        std = np.std(np.std(train_set, axis=0),axis=1)
+        
+        self.norm_prices = lambda x: (x - mean[:,:,0:n_series]) / std[:,:,0:n_series]
+        self.denorm_prices = lambda x: x * std[:,:,0:n_series] + mean[:,:,0:n_series]
+        
+        self.norm_costs = lambda x: (x - mean[:,:,n_series:n_series*2]) / std[:,:,n_series:n_series*2]
+        self.denorm_costs = lambda x: x * std[:,:,n_series:n_series*2] + mean[:,:,n_series:n_series*2]
+        
+        self.norm_features = lambda x: (x - mean[:,:,n_series*2:]) / std[:,:,n_series*2:]
+        self.denorm_features = lambda x: x * std[:,:,n_series*2:] + mean[:,:,n_series*2:]
+        
+    def initialize(self,):
+        
+        n_series = self.n_series
+        features = self.features
+        serie_length = self.serie_length
+        variables=[]
+        
+        # the last action performed (default is 0 - Neutral)
+        old_action = 0.
+        # this is the content of the lstm cells at time -1
+        lstm = np.zeros((1,self.nLSTMCells))
+        # this is the output of the lstm at time -1
+        lstm_out = np.zeros((1,self.nLSTMCells))
+        
+        # output of the network (decision) through time
+        out = []
+        # reward through time
+        reward = []
+        
+        #Stock price derivative
+        Z = []
+        for _ in range(serie_length):
+            Z.append(tf.placeholder("float", [None,n_series]))
+        
+        #Stock cost
+        C = []
+        for _ in range(serie_length):
+            C.append(tf.placeholder("float", [None,n_series]))
+                    
+        #Features
+        F = []
+        for _ in range(serie_length):
+            F.append(tf.placeholder("float", [None,features]))
+        
+        # unfold through time
+        for t in xrange(serie_length):
+            # As we remember the shape of the dataset is (n_row, length, n_series, n_features)
+            # each Z should be a vertical vector (n_row, 1, n_series, n_features)
+            
+            # Merge of the input
+            inputShared1 = Merge([self.norm_prices(Z[t]),self.norm_costs(C[t]),self.norm_features(F[t])],[n_series,n_series,features],n_series*2 + features,tf.tanh,variables)
+            
+            # Shared block 1: elaboration of the input
+            sharedBlock1 = Block(inputShared1, n_series*2 + features , [self.sharedBlockShape[1]]*self.sharedBlockShape[0], tf.tanh, variables, dropout=self.dropout)
+            
+            # Features given by shared1 and lstm
+            inputShared2 = Merge([sharedBlock1, lstm_out],[self.sharedBoxShape[1],self.nLSTMCells], self.sharedBoxShape[1] ,tf.tanh, variables)   
+            
+            sharedBlock2 = Block(inputShared2, self.sharedBoxShape[1], [self.sharedBoxShape[1]] * self.sharedBoxShape[0], tf.tanh, variables, dropout=self.dropout)
+            
+            # Each block represent a gate for the LSTM Cells
+            block1 = Block(sharedBlock2, self.sharedBoxShape[1], [self.blocksShape[1]] * self.blocksShape[0], tf.tanh, variables, dropout=self.dropout)
+            block2 = Block(sharedBlock2, self.sharedBoxShape[1], [self.blocksShape[1]] * self.blocksShape[0], tf.tanh, variables, dropout=self.dropout)
+            block3 = Block(sharedBlock2, self.sharedBoxShape[1], [self.blocksShape[1]] * self.blocksShape[0], tf.tanh, variables, dropout=self.dropout)
+            block4 = Block(sharedBlock2, self.sharedBoxShape[1], [self.blocksShape[1]] * self.blocksShape[0], tf.tanh, variables, dropout=self.dropout)
+            
+            #LSTM cells
+            lstm, lstm_out = Lstm(block1, block2, block3, block4, lstm)
+            outerBlock = Block(lstm_out, self.blocksShape[1], [self.decisionBlockShape[1]] * self.decisionBlockShape[0] + [n_series], tf.tanh, variables, dropout=self.dropout)
+            
+            out_temp = outerBlock
+            out.append(outerBlock)
+        
+            if t==0:
+                reward.append(tf.reduce_sum(d(old_action,self.denorm_costs(C[t]),self.denorm_prices(Z[t]), 0.)))
+            else:   
+                reward.append(tf.reduce_sum(d(old_action,self.denorm_costs(C[t]),self.denorm_prices(Z[t]), self.denorm_prices(Z[t-1]))))
+            
+            old_action = out_temp
+    
+        r = 0.
+        for i in xrange(serie_length):
+            r = r + tf.reduce_sum(reward[i])
+
+        # we should max r, or the same min -r
+        self.optimizer = tf.train.RMSPropOptimizer(learning_rate=0.001).minimize(-r)
+        self.tot_reward = r
+        self.out = out
+        
+        init = tf.initialize_all_variables()
+        self.session = tf.Session()
+        self.session.run(init)
+        
+        
+    def learn():
+        raise("Not implemented yet")

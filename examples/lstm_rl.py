@@ -232,7 +232,7 @@ lstm_out = np.zeros((1,10))
 for t in xrange(series_length):
     inputShared1 = Merge([Z_in[t],Comm[t]],[window, 1],10,tf.tanh,variables)
     sharedBlock1 = Block(inputShared1, 10, [10]*2, tf.tanh, variables)
-    inputShared2 = Merge([sharedBlock1, lstm_out],[10],10,tf.tanh, variables)    
+    inputShared2 = Merge([sharedBlock1, lstm_out],[10,10],10,tf.tanh, variables)    
     sharedBlock2 = Block(inputShared2, 10, [10], tf.tanh, variables)
     block1 = Block(sharedBlock2, 10, [10]*3, tf.tanh, variables)
     block2 = Block(sharedBlock2, 10, [10]*3, tf.tanh, variables)

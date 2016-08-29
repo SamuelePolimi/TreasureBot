@@ -39,7 +39,7 @@ class Learner:
     """
     def getBot(self):
         final_object = self.regressor.finalize()
-        bot = None #bot = Bot(final_object)
+        bot = Bot(final_object)
         return bot
         
         
