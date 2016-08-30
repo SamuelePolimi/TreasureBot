@@ -77,7 +77,7 @@ def d(u,c,  z_t, z_tm1):
 class LSTMNet(Regressor):
     
     #dimension of blocks are expressed by (n_layer, n_neuron)
-    def __init__(self, sharedBoxShape, blocksShape, nLSTMCells, decisionBlockShape, train_set, validation_set, n_series, features, dropout=1.):
+    def __init__(self, sharedBoxShape, blocksShape, nLSTMCells, decisionBlockShape, train_set, validation_set, n_series, features, dropout=1., batch_size=100):
         
         self.sharedBoxShape = sharedBoxShape
         self.blocksShape = blocksShape
@@ -98,7 +98,7 @@ class LSTMNet(Regressor):
         self.train_set = train_set
         self.validation_set = validation_set
         self.dropout = dropout
-        
+        self.batch_size=batch_size
         #here I find the mean of each feature
         mean = np.mean(np.mean(train_set[:,:,0], axis=0),axis=1)
         
@@ -114,7 +114,9 @@ class LSTMNet(Regressor):
         self.norm_features = lambda x: (x - mean[:,:,n_series*2:]) / std[:,:,n_series*2:]
         self.denorm_features = lambda x: x * std[:,:,n_series*2:] + mean[:,:,n_series*2:]
         
-    def initialize(self,):
+        self.initialize()
+        
+    def initialize(self):
         
         n_series = self.n_series
         features = self.features
@@ -193,10 +195,51 @@ class LSTMNet(Regressor):
         self.tot_reward = r
         self.out = out
         
+        self.Z = Z
+        self.C = C
+        self.F = F
+        self.variables = variables
+        
         init = tf.initialize_all_variables()
         self.session = tf.Session()
         self.session.run(init)
         
         
-    def learn():
+    def learn(self):
+        
+        m_rew = 0
+        if True:#shuffle:
+            np.random.shuffle(self.train_set)
+        
+        batch_size = self.batch_size
+        n_batch = self.train_set.shape[0] / batch_size
+        n_series = self.n_series
+        Z , C , F = (self.Z, self.C, self.F)
+        
+        #-----------TRAIN
+        for batch in xrange(n_batch):
+            feed_dict = {}
+            for i in range(self.serie_length):
+                feed_dict[Z[i]] = self.train_set[batch*batch_size:(batch+1)*batch_size,i:i+1,0:n_series]
+                feed_dict[C[i]] = self.train_set[batch*batch_size:(batch+1)*batch_size,i:i+1,n_series:n_series*2]
+                feed_dict[F[i]] = self.train_set[batch*batch_size:(batch+1)*batch_size,i:i+1,n_series*2:]
+                
+            rew, _= self.session.run( [self.tot_reward, self.optimizer],feed_dict=feed_dict)
+            n_rew = rew / (batch_size + 0.0)
+            m_rew += n_rew
+            
+        #------------TEST
+        feed_dict = {}
+        for i in range(self.serie_length):
+            feed_dict[Z[i]] = self.train_set[:,i:i+1,:0:n_series]
+            feed_dict[C[i]] = self.train_set[:,i:i+1,n_series:n_series*2]
+            feed_dict[F[i]] = self.train_set[:,i:i+1,n_series*2:]
+        rew = self.session.run( [self.tot_reward],feed_dict=feed_dict)
+        test_rew = rew[0] /(self.validation_set.shape[0] + 0.0)
+        
+        return (m_rew /(n_batch + 0.0), test_rew)
+        
+    def finalize(self):
         raise("Not implemented yet")
+        return self.session.run(self.variables)
+        

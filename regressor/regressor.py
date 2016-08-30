@@ -1,15 +1,10 @@
-class Regressor:
-
-    def initialize(self, serie_length, n_series, features):    
-        raise("Not implemented")        
+class Regressor:     
         
-        
-    def learn(self,dataset):
+    """It will return a tuple with (gain on train_set, gain on validation_set)"""
+    def learn(self):
         raise("Not implemented")
 
-    def evaluate(self,dataset):
-        raise("Not implemented")
-
+    
     def finalize(self):
         raise("Not implemented")
 
