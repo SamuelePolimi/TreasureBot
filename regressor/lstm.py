@@ -2,21 +2,21 @@
 This regressor optimizes the gain with long short action.
 You should provide to the regressor a trainset and a validationset with the following shape:
 
-(nrow, series_length, n_series, n_features)
+(nrow, series_length, n_series*2 + n_features)
 
 remember that in position
 
-[i,j,k,0]
+[i,j,0:n_series]
 
-we will find the actual prices at time j of the stock k, and at position
+we will find the actual prices at time j of the stocks
 
-[i,j,k,1]
+[i,j,n_series:n_series*2]
 
-we will find the atual cost of performing a long or a short for the stock k at the time j
+we will find the atual cost of performing a long or a short for the stocks at the time j
 
-at position: [i,j,k,l] with l!=0 and l!=1
+at position: [i,j,n_series*2:]
 
-we will find the l-th features of the stock k at the time j.
+we will find the l-th features of the stocks at the time j.
 
 The shapes of this regressor is described:
 
@@ -36,7 +36,7 @@ Outcome
 
 
 ----------------------------------------------------------------------------"""
-from regressor import Regressor
+from optimizer import Optimizer
 import numpy as np
 import tensorflow as tf
 
@@ -70,19 +70,28 @@ def Merge(input_list, dim_list, out_dim, f,variables):
     variables.append(b)
     return f(sum_+b)
     
-#this represent the reward signal
-def d(u,c,  z_t, z_tm1):
-    return u * z_t - c*tf.abs(z_t - z_tm1)
+"""
+u_tm1 : action at time t-1
+u_t : action at time t
+z_t : value of derivative at time t
+c : cost
+"""
+def d(u_tm1, u_t, z_t, c):
+    #u_tm1 * z_t : gain at time t (you use action in precedence, because the agent decide now based on what saw before)
+    #c * |u_t - u_tm1| is the cost of change action
+    #divided by 2 because of a correction
+    return u_tm1 * z_t - c * tf.abs(u_t-u_tm1) / 2.
     
-class LSTMNet(Regressor):
+class LSTMNet(Optimizer):
     
     #dimension of blocks are expressed by (n_layer, n_neuron)
-    def __init__(self, sharedBoxShape, blocksShape, nLSTMCells, decisionBlockShape, train_set, validation_set, n_series, features, dropout=1., batch_size=100):
+    def __init__(self, optimizerConfig, train_set, validation_set, n_series, features):
         
-        self.sharedBoxShape = sharedBoxShape
-        self.blocksShape = blocksShape
-        self.nLSTMCells = nLSTMCells
-        self.decisionBlockShape = decisionBlockShape
+        self.sharedBoxShape = optimizerConfig['sharedBoxShape']
+        self.blocksShape = optimizerConfig['blocksShape']
+        self.nLSTMCells = optimizerConfig['nLSTMCells']
+        self.decisionBlockShape = optimizerConfig['decisionBlockShape']
+        
         assert len(train_set.shape) == 3 , "train_set should be 3 dimensional"
         assert len(validation_set.shape) == 3, "validation_set should be 3 dimensional"
         assert train_set.shape[1] == validation_set.shape[1], "validation and train sets should have 2nd dimension equal (serie_length)"
@@ -97,14 +106,17 @@ class LSTMNet(Regressor):
         self.features = features
         self.train_set = train_set
         self.validation_set = validation_set
-        self.dropout = dropout
-        self.batch_size=batch_size
+        self.dropout = optimizerConfig['dropout']
+        self.batch_size=optimizerConfig['batch_size']
         #here I find the mean of each feature
         mean = np.mean(np.mean(train_set[:,:,0], axis=0),axis=1)
         
         #here I find the mean of each feature
         std = np.std(np.std(train_set, axis=0),axis=1)
         
+        
+        """Just a right normalization (between 0 and 1)
+        """
         self.norm_prices = lambda x: (x - mean[:,:,0:n_series]) / std[:,:,0:n_series]
         self.denorm_prices = lambda x: x * std[:,:,0:n_series] + mean[:,:,0:n_series]
         
@@ -179,10 +191,7 @@ class LSTMNet(Regressor):
             out_temp = outerBlock
             out.append(outerBlock)
         
-            if t==0:
-                reward.append(tf.reduce_sum(d(old_action,self.denorm_costs(C[t]),self.denorm_prices(Z[t]), 0.)))
-            else:   
-                reward.append(tf.reduce_sum(d(old_action,self.denorm_costs(C[t]),self.denorm_prices(Z[t]), self.denorm_prices(Z[t-1]))))
+            reward.append(tf.reduce_sum(d(old_action,out_temp, self.denorm_prices(Z[t]), self.denorm_costs(C[t]))))
             
             old_action = out_temp
     
