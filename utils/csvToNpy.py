@@ -38,6 +38,30 @@ Let's start..
 """
 
 
+"""
+TODO1:
+
+imagine to have the following dataset
+
+date         open     close      max      min
+12.09.2012    10.      12.        14.      9.
+13.09.2012    13.      12.5       15.      8.
+14.09.2012    14.      11.        16.      10.
+
+and we wand to delete the second row (for a synchronization issue, suppose), we won't have:
+
+date         open     close      max      min
+12.09.2012    10.      12.        14.      9.
+14.09.2012    14.      11.        16.      10.
+
+but the following:
+
+date         open     close      max      min
+12.09.2012    10.      12.5       15.      8.
+14.09.2012    14.      11.        16.      10.
+
+"""
+
 def printExampleFile(path):
     print("File example:\n")
     with open(path, "r") as ins:
@@ -86,12 +110,117 @@ def syncronize(time1,time2):
         
     return (time1_index, time2_index)
     
+def indexise(indexes, date_time, open_price, close_price, min_price, max_price, volume, features):    
+    ret = []    
+    for last_indx, next_indx in zip(indexes[:-1],indexes[1:]):
+        ret_date_time = date_time[last_indx]
+        ret_open_price = open_price[last_indx]
+        ret_close_price = close_price[next_indx-1]
+        ret_min_price = min(min_price[last_indx:next_indx])
+        ret_max_price = max(max_price[last_indx:next_indx])
+        ret_volume = sum(volume[last_indx:next_indx])
+        ret_features = []
+        for i in features.shape[1]:
+            ret_features.append(features[last_indx,i])
+        ret.append([ret_date_time, ret_open_price, ret_close_price, ret_min_price, ret_max_price, ret_volume] + ret_features)
+    final_features = []
+    for f in features:
+        final_features.append(f[-1])
+    ret.append([date_time[-1],open_price[-1],close_price[-1],min_price[-1],max_price[-1],volume[-1]] + final_features)
+    assert len(indexes)==len(ret)
+    return ret
+        
+        
+def ask(message, err_message, function):
+    while True:
+        try:
+            ret = raw_input(message)
+            ret = function(ret)
+            #ret = selectCol(filename,date_column,lambda x: datetime.strptime(x, format_))
+            break
+        except:
+            print("select valid number please")
+    return ret
+    
+class Dataset:
+    
+    def __init__(self, open_price, close_price, min_price, max_price, volume, commission_f):
+        self.open_price = open_price
+        self.close_price = close_price
+        self.min_price = min_price
+        self.max_price = max_price
+        self.volume = volume
+        self.commission_f = commission_f
+        
+    def indexise(self, indexes):
+        open_price = []
+        close_price = []
+        min_price = []
+        max_price = []
+        volume = []
+        
+        for last_indx, next_indx in zip(indexes[:-1],indexes[1:]):
+            open_price.append(self.open_price[last_indx])
+            close_price.append(self.close_price[next_indx-1])
+            min_price.append(min(self.min_price[last_indx:next_indx]))
+            max_price.append(max(self.max_price[last_indx:next_indx]))
+            volume.append(sum(self.volume[last_indx:next_indx]))
+        
+        open_price.append(self.open_price[-1])
+        close_price.append(self.close_price[-1])
+        min_price.append(self.min_price[-1])
+        max_price.append(self.max_price[-1])
+        volume.append(self.volume[-1])
+        
+        self.open_price = open_price
+        self.close_price = close_price
+        self.min_price = min_price
+        self.max_price = max_price
+        self.volume = volume
+        
+    def get_derivate_matrix(self):
+        return (np.matrix([self.close_price]) - np.matrix([self.open_price])).T
+        
+    def get_commission_matrix(self):
+        return np.matrix([map(self.commission_f, self.open_price)]).T
+
+    def get_features_matrix(self, min_, max_, volume_):
+        ret = []
+        if min_:
+            ret.append(self.min_price)
+        if max_:
+            ret.append(self.max_price)
+        if volume_:
+            ret.append(self.volume)
+        return np.matrix(ret).T
+        
+        
+        
+        
 if __name__ == "__main__":
     cont = True
     
     format_ = '%d.%m.%Y %H:%M:%S.000'
     
     first_cycle = True
+
+    
+    datasets = []
+    """The shape of dataset in the code will be:
+    datasets = [v1, v2, .. vn]
+    where vi is the ith dataset and
+    
+    vi = [c1, c2, c3, c4, c5, c6, ... cn]
+    
+    where 
+        c1 = open_price
+        c2 = close_price
+        c3 = min_price
+        c4 = max_price
+        c5 = volume
+        c6.. cn = features
+        """
+    
     #select columns and files
     while cont:
         filename = raw_input("Select the csv file: ")
@@ -106,123 +235,91 @@ if __name__ == "__main__":
         if not raw_input("Is the following time format correct " + format_ + "? (Y | n)? ") in ['Y','y','yes',1,'1']:
             format_ = raw_input("Input the time format: ")
         
-        while True:
-            try:
-                date_column = raw_input("Select the column of the timestamp (counting start by 0): ")
-                date_column = int(date_column)
-                dates = selectCol(filename,date_column,lambda x: datetime.strptime(x, format_))
-                break
-            except:
-                print("select valid number please")
+        dates = ask("Select the column of the timestamp (counting start by 0): ","select valid number please",lambda y: selectCol(filename,int(y),lambda x: datetime.strptime(x, format_)))        
         
-        while True:
-            try:
-                prices_column = raw_input("Select the column of the stock's open price (counting start by 0): ")
-                prices_column = int(prices_column)
-                open_prices = selectCol(filename,prices_column,float)
-                break
-            except:
-                print("select valid number please")
+        open_prices = ask("Select the column of the stock's open price (counting start by 0): ","select valid number please",lambda y: selectCol(filename, int(y), float))
+        close_prices = ask("Select the column of the stock's close price (counting start by 0): ","select valid number please",lambda y: selectCol(filename, int(y), float))
+        min_prices = ask("Select the column of the stock's min price (counting start by 0): ","select valid number please",lambda y: selectCol(filename, int(y), float))
+        max_prices = ask("Select the column of the stock's max price (counting start by 0): ","select valid number please",lambda y: selectCol(filename, int(y), float))
+        volumes = ask("Select the column of the stock's volume (counting start by 0): ","select valid number please",lambda y: selectCol(filename, int(y), float))
         
-        while True:
-            try:
-                prices_column = raw_input("Select the column of the stock's close price (counting start by 0): ")
-                prices_column = int(prices_column)
-                close_prices = selectCol(filename,prices_column,float)
-                break
-            except:
-                print("select valid number please")
-                
-        features = []
+        min_commission = ask("Select the minimum commission: ","select valid commission please", float)
+        max_commission = ask("Select the maximum commission: ","select valid commission please", float)
+        per_commission = ask("Select the rate commission: ","select valid commission please", float)
         
-        next_col = raw_input("Would you like to select a feature column? (Y | n)? ") in ['Y','y','yes',1,'1']
-        while next_col:
-            try:
-                feature_column = raw_input("Select the column of the feature: ")
-                feature_column = int(feature_column)
-                features.append(selectCol(filename,feature_column,float))
-                if not raw_input("Would you like to select a feature column? (Y | n)? ") in ['Y','y','yes',1,'1']:
-                    break
-            except:
-                print("select valid number please")
-        
-        while True:
-            try:
-                min_commission = raw_input("Select the minimum commission: ")
-                min_commission = float(min_commission)
-                break
-            except:
-                print("select valid commission please")
-                
-        while True:
-            try:
-                max_commission = raw_input("Select the maximum commission: ")
-                max_commission = float(max_commission)
-                break
-            except:
-                print("select valid commission please")   
-          
-        while True:
-            try:
-                per_commission = raw_input("Select the rate of commission (1 is 100%): ")
-                per_commission = float(max_commission)
-                break
-            except:
-                print("select valid commission please") 
-                
         
         cont = raw_input("Would you like to insert another file? (Y | n)? ") in ['Y','y','yes',1,'1']
         
         #Syncronization block
         if first_cycle:
             last_dates = np.matrix(dates).T
-            last_derivates = (np.matrix([close_prices]) - np.matrix([open_prices])).T     
-            last_cost = np.matrix([map(
-                                       lambda x: max(min(x*per_commission, max_commission),min_commission), open_prices)
-                                       ]).T
-            last_features = np.matrix(features).T
-            first_cycle = False
+            new_ds = Dataset(open_prices, close_prices, min_prices, max_prices, volumes, lambda x: max(min(x*per_commission, max_commission),min_commission) )
         else:
             index1, index2 = syncronize(last_dates,dates)
-            
-            if not raw_input("Merging the last files, you'll match " + str(len(index1)) +" data points. \nWould you like to merge this file too? (Y | n)? ") in ['Y','y','yes',1,'1']:
-                print("Last file discarted!")                
-                continue
+            for ds in datasets:
+                ds.indexise(index1)
+            new_ds = Dataset(open_prices, close_prices, min_prices, max_prices, volumes, lambda x: max(min(x*per_commission, max_commission),min_commission) )
+            new_ds.indexise(index2)
             last_dates = last_dates[index1]
-            last_derivates = np.append(last_derivates[index1], (np.matrix([close_prices]) - np.matrix([open_prices])).T[index2], axis=1)
-            last_cost = np.append(last_cost,
-                                  np.matrix(
-                                  [map(
-                                       lambda x: max(min(x*per_commission, max_commission),min_commission), open_prices)
-                                       ]).T,axis=1)
-            if(len(features) > 0):
-                if last_features.shape[0]> 0:
-                    last_features = np.append(last_features[index1], np.matrix(features)[index2].T, axis=1)
+        datasets.append(new_ds)
+    
+    min_ = raw_input("Would you like to use min_price as feature? (Y | n)? ") in ['Y','y','yes',1,'1']
+    max_ = raw_input("Would you like to use max_price as feature? (Y | n)? ") in ['Y','y','yes',1,'1']
+    volume_ = raw_input("Would you like to use volume as feature? (Y | n)? ") in ['Y','y','yes',1,'1']
+    timing_ = raw_input("Would you like to use the time duration? (Y | n)? ") in ['Y','y','yes',1,'1']
+
+    n_rows = ask("How many rows would you like to skip (if you say 1, you would not skip any row, with 2 you'll skip 1 row out of 2, ..)?", "Please give a reasonable (numeric) answer",int)
+    derivate_matrix = None
+    commission_matrix = None
+    
+    indexes = range(0,last_dates.shape[0],n_rows)
+    for ds in datasets:
+        ds.indexise(indexes)
+    last_dates = last_dates[indexes]
+    
+            
+    init_features = False
+    feature_matrix = None
+    
+    #if at least one of the features is enabled
+    if min_ or max_ or volume_ or timing_:
+        if timing_:
+            diff_dates = last_dates[1:] - last_dates[:-1]
+            for ds in datasets:
+                ds.indexise(range(0,diff_dates.shape[0]))
+            features_matrix = np.matrix(diff_dates)
+            init_features = True
+        if min_ or max_ or volume_:
+            for ds in datasets:
+                if not init_features:
+                    features_matrix = ds.get_features_matrix(min_, max_, volume_)
+                    init_features=True
                 else:
-                    last_features = np.matrix(features).T
-                    
+                    print features_matrix.shape
+                    print ds.get_features_matrix(min_,max_,volume_).shape
+                    features_matrix = np.append(features_matrix, ds.get_features_matrix(min_, max_, volume_),axis=1)
     
-    final_matrix = np.append(np.append(last_derivates, last_cost,  axis=1), last_features, axis=1)
-    
+        
+    first_cycle=True
+    for ds in datasets:
+        if first_cycle:
+            derivate_matrix = ds.get_derivate_matrix()
+            commission_matrix = ds.get_commission_matrix()
+            first_cycle=False
+        else:
+            derivate_matrix = np.append(derivate_matrix,ds.get_derivate_matrix(),axis=1)
+            commission_matrix = np.append(commission_matrix, ds.get_commission_matrix(),axis=1)
+            
+    if min_ or max_ or volume_ or timing_:
+        final_matrix = np.append(np.append(derivate_matrix,commission_matrix,axis=1),features_matrix,axis=1)
+    else:        
+        final_matrix = np.append(derivate_matrix,commission_matrix,axis=1)
+        
     print "Your data has the shape: ", final_matrix.shape
     
     while True:
         try:
-            jrow = raw_input("Select how many rows would you like to jump: ")
-            jrow = int(jrow)
-            break
-        except:
-            print("select valid commission please") 
-    
-    index = range(0,final_matrix.shape[0]-1,jrow)
-    final_matrix = final_matrix[index]
-    last_dates = last_dates[index]
-    
-    print "Now your data has the shape: ", final_matrix.shape
-    
-    while True:
-        try:
-            time_series = raw_input("How long you would like to be you time series?: ")
+            time_series = raw_input("How long you would like to be your time series?: ")
             time_series = int(time_series)
             n_sample = final_matrix.shape[0]/time_series
             if n_sample>3:
@@ -249,7 +346,7 @@ if __name__ == "__main__":
             n_train = raw_input("How many samples do you want in your train_set.npy?: ")
             n_train = int(n_train)
             if n_train < n_sample - 2:
-                continue
+                break
             else:
                 print("Come on, you need at least 2 samples outside your trainset. At least one for the validation set and one for the test set. be nice.")
         except:
@@ -257,10 +354,10 @@ if __name__ == "__main__":
 
     while True:
         try:
-            n_val = raw_input("How many samples do you want in your train_set.npy?: ")
+            n_val = raw_input("How many samples do you want in your validation_set.npy?: ")
             n_val = int(n_train)
             if n_val < n_sample - n_train - 1:
-                continue
+                break
             else:
                 print("Come on, you need at least 1 sample outside your trainset and validation set.")
         except:
