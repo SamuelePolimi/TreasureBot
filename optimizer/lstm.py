@@ -92,6 +92,9 @@ class LSTMNet(Optimizer):
         self.nLSTMCells = optimizerConfig['nLSTMCells']
         self.decisionBlockShape = optimizerConfig['decisionBlockShape']
         
+        self.train_set = train_set
+        self.validation_set = validation_set
+        
         assert len(train_set.shape) == 3 , "train_set should be 3 dimensional"
         assert len(validation_set.shape) == 3, "validation_set should be 3 dimensional"
         assert train_set.shape[1] == validation_set.shape[1], "validation and train sets should have 2nd dimension equal (serie_length)"
@@ -109,22 +112,22 @@ class LSTMNet(Optimizer):
         self.dropout = optimizerConfig['dropout']
         self.batch_size=optimizerConfig['batch_size']
         #here I find the mean of each feature
-        mean = np.mean(np.mean(train_set[:,:,0], axis=0),axis=1)
+        mean = np.mean(np.mean(train_set, axis=0),axis=0)
         
         #here I find the mean of each feature
-        std = np.std(np.std(train_set, axis=0),axis=1)
+        std = np.std(np.std(train_set, axis=0),axis=0)
         
         
         """Just a right normalization (between 0 and 1)
         """
-        self.norm_prices = lambda x: (x - mean[:,:,0:n_series]) / std[:,:,0:n_series]
-        self.denorm_prices = lambda x: x * std[:,:,0:n_series] + mean[:,:,0:n_series]
+        self.norm_prices = lambda x: (x - mean[0:n_series]) / std[0:n_series]
+        self.denorm_prices = lambda x: x * std[0:n_series] + mean[0:n_series]
         
-        self.norm_costs = lambda x: (x - mean[:,:,n_series:n_series*2]) / std[:,:,n_series:n_series*2]
-        self.denorm_costs = lambda x: x * std[:,:,n_series:n_series*2] + mean[:,:,n_series:n_series*2]
+        self.norm_costs = lambda x: (x - mean[n_series:n_series*2]) / std[n_series:n_series*2]
+        self.denorm_costs = lambda x: x * std[n_series:n_series*2] + mean[n_series:n_series*2]
         
-        self.norm_features = lambda x: (x - mean[:,:,n_series*2:]) / std[:,:,n_series*2:]
-        self.denorm_features = lambda x: x * std[:,:,n_series*2:] + mean[:,:,n_series*2:]
+        self.norm_features = lambda x: (x - mean[n_series*2:]) / std[n_series*2:]
+        self.denorm_features = lambda x: x * std[n_series*2:] + mean[n_series*2:]
         
         self.initialize()
         
@@ -138,9 +141,9 @@ class LSTMNet(Optimizer):
         # the last action performed (default is 0 - Neutral)
         old_action = 0.
         # this is the content of the lstm cells at time -1
-        lstm = np.zeros((1,self.nLSTMCells))
+        lstm = np.zeros((1,self.nLSTMCells)).astype(np.float32)
         # this is the output of the lstm at time -1
-        lstm_out = np.zeros((1,self.nLSTMCells))
+        lstm_out = np.zeros((1,self.nLSTMCells)).astype(np.float32)
         
         # output of the network (decision) through time
         out = []
@@ -168,25 +171,31 @@ class LSTMNet(Optimizer):
             # each Z should be a vertical vector (n_row, 1, n_series, n_features)
             
             # Merge of the input
-            inputShared1 = Merge([self.norm_prices(Z[t]),self.norm_costs(C[t]),self.norm_features(F[t])],[n_series,n_series,features],n_series*2 + features,tf.tanh,variables)
             
+            print "Unfold: ", t+1, "out of", serie_length
+
+            inputShared1 = Merge([self.norm_prices(Z[t]),self.norm_costs(C[t]),self.norm_features(F[t])],[n_series,n_series,features],n_series*2 + features,tf.tanh,variables)
+          
             # Shared block 1: elaboration of the input
-            sharedBlock1 = Block(inputShared1, n_series*2 + features , [self.sharedBlockShape[1]]*self.sharedBlockShape[0], tf.tanh, variables, dropout=self.dropout)
+            sharedBlock1 = Block(inputShared1, n_series*2 + features , [self.sharedBoxShape[1]]*self.sharedBoxShape[0], tf.tanh, variables, dropout=self.dropout)
             
             # Features given by shared1 and lstm
-            inputShared2 = Merge([sharedBlock1, lstm_out],[self.sharedBoxShape[1],self.nLSTMCells], self.sharedBoxShape[1] ,tf.tanh, variables)   
-            
+            inputShared2 = Merge([sharedBlock1, lstm_out]
+                ,[self.sharedBoxShape[1],self.nLSTMCells]
+                , self.sharedBoxShape[1] ,tf.tanh, variables)   
+
+
             sharedBlock2 = Block(inputShared2, self.sharedBoxShape[1], [self.sharedBoxShape[1]] * self.sharedBoxShape[0], tf.tanh, variables, dropout=self.dropout)
             
             # Each block represent a gate for the LSTM Cells
-            block1 = Block(sharedBlock2, self.sharedBoxShape[1], [self.blocksShape[1]] * self.blocksShape[0], tf.tanh, variables, dropout=self.dropout)
-            block2 = Block(sharedBlock2, self.sharedBoxShape[1], [self.blocksShape[1]] * self.blocksShape[0], tf.tanh, variables, dropout=self.dropout)
-            block3 = Block(sharedBlock2, self.sharedBoxShape[1], [self.blocksShape[1]] * self.blocksShape[0], tf.tanh, variables, dropout=self.dropout)
-            block4 = Block(sharedBlock2, self.sharedBoxShape[1], [self.blocksShape[1]] * self.blocksShape[0], tf.tanh, variables, dropout=self.dropout)
+            block1 = Block(sharedBlock2, self.sharedBoxShape[1], [self.blocksShape[1]] * self.blocksShape[0] + [self.nLSTMCells], tf.tanh, variables, dropout=self.dropout)
+            block2 = Block(sharedBlock2, self.sharedBoxShape[1], [self.blocksShape[1]] * self.blocksShape[0] + [self.nLSTMCells], tf.tanh, variables, dropout=self.dropout)
+            block3 = Block(sharedBlock2, self.sharedBoxShape[1], [self.blocksShape[1]] * self.blocksShape[0] + [self.nLSTMCells], tf.tanh, variables, dropout=self.dropout)
+            block4 = Block(sharedBlock2, self.sharedBoxShape[1], [self.blocksShape[1]] * self.blocksShape[0] + [self.nLSTMCells], tf.tanh, variables, dropout=self.dropout)
             
             #LSTM cells
             lstm, lstm_out = Lstm(block1, block2, block3, block4, lstm)
-            outerBlock = Block(lstm_out, self.blocksShape[1], [self.decisionBlockShape[1]] * self.decisionBlockShape[0] + [n_series], tf.tanh, variables, dropout=self.dropout)
+            outerBlock = Block(lstm_out, self.nLSTMCells, [self.decisionBlockShape[1]] * self.decisionBlockShape[0] + [n_series], tf.tanh, variables, dropout=self.dropout)
             
             out_temp = outerBlock
             out.append(outerBlock)
@@ -229,9 +238,9 @@ class LSTMNet(Optimizer):
         for batch in xrange(n_batch):
             feed_dict = {}
             for i in range(self.serie_length):
-                feed_dict[Z[i]] = self.train_set[batch*batch_size:(batch+1)*batch_size,i:i+1,0:n_series]
-                feed_dict[C[i]] = self.train_set[batch*batch_size:(batch+1)*batch_size,i:i+1,n_series:n_series*2]
-                feed_dict[F[i]] = self.train_set[batch*batch_size:(batch+1)*batch_size,i:i+1,n_series*2:]
+                feed_dict[Z[i]] = self.train_set[batch*batch_size:(batch+1)*batch_size,i,0:n_series]
+                feed_dict[C[i]] = self.train_set[batch*batch_size:(batch+1)*batch_size,i,n_series:n_series*2]
+                feed_dict[F[i]] = self.train_set[batch*batch_size:(batch+1)*batch_size,i,n_series*2:]
                 
             rew, _= self.session.run( [self.tot_reward, self.optimizer],feed_dict=feed_dict)
             n_rew = rew / (batch_size + 0.0)
@@ -240,9 +249,9 @@ class LSTMNet(Optimizer):
         #------------TEST
         feed_dict = {}
         for i in range(self.serie_length):
-            feed_dict[Z[i]] = self.train_set[:,i:i+1,:0:n_series]
-            feed_dict[C[i]] = self.train_set[:,i:i+1,n_series:n_series*2]
-            feed_dict[F[i]] = self.train_set[:,i:i+1,n_series*2:]
+            feed_dict[Z[i]] = self.validation_set[:,i,0:n_series]
+            feed_dict[C[i]] = self.validation_set[:,i,n_series:n_series*2]
+            feed_dict[F[i]] = self.validation_set[:,i,n_series*2:]
         rew = self.session.run( [self.tot_reward],feed_dict=feed_dict)
         test_rew = rew[0] /(self.validation_set.shape[0] + 0.0)
         
