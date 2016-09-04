@@ -1,7 +1,7 @@
-import sys
 import csv
 import numpy as np
 import os
+import json
 
 from datetime import datetime
 
@@ -61,6 +61,8 @@ date         open     close      max      min
 14.09.2012    14.      11.        16.      10.
 
 """
+def getSeconds(dtime):
+    return dtime.total_seconds()
 
 def printExampleFile(path):
     print("File example:\n")
@@ -195,8 +197,6 @@ class Dataset:
         return np.matrix(ret).T
         
         
-        
-        
 if __name__ == "__main__":
     cont = True
     
@@ -234,8 +234,16 @@ if __name__ == "__main__":
         
         if not raw_input("Is the following time format correct " + format_ + "? (Y | n)? ") in ['Y','y','yes',1,'1']:
             format_ = raw_input("Input the time format: ")
-        
-        dates = ask("Select the column of the timestamp (counting start by 0): ","select valid number please",lambda y: selectCol(filename,int(y),lambda x: datetime.strptime(x, format_)))        
+            
+        while True:
+            try:
+                ret = raw_input("Select column of timestamp: ")
+                ret = selectCol(filename,int(ret),lambda x: datetime.strptime(x, format_))
+                break
+            except:
+                print("select valid number please")
+        dates = ret
+        #dates = ask("Select the column of the timestamp (counting start by 0): ","select valid number please",lambda y: selectCol(filename,int(y),lambda x: datetime.strptime(x, format_)))        
         
         open_prices = ask("Select the column of the stock's open price (counting start by 0): ","select valid number please",lambda y: selectCol(filename, int(y), float))
         close_prices = ask("Select the column of the stock's close price (counting start by 0): ","select valid number please",lambda y: selectCol(filename, int(y), float))
@@ -281,10 +289,14 @@ if __name__ == "__main__":
     init_features = False
     feature_matrix = None
     
+    diff_dates = map(getSeconds ,(last_dates[1:] - last_dates[:-1]).ravel().tolist()[0])
+    diff_dates = np.matrix([diff_dates]).T
+    
+    mean_duration = np.mean(diff_dates)
+    tot_duration = np.sum(diff_dates)
     #if at least one of the features is enabled
     if min_ or max_ or volume_ or timing_:
         if timing_:
-            diff_dates = last_dates[1:] - last_dates[:-1]
             for ds in datasets:
                 ds.indexise(range(0,diff_dates.shape[0]))
             features_matrix = np.matrix(diff_dates)
@@ -356,7 +368,7 @@ if __name__ == "__main__":
         try:
             n_val = raw_input("How many samples do you want in your validation_set.npy?: ")
             n_val = int(n_train)
-            if n_val < n_sample - n_train - 1:
+            if n_val > n_sample - n_train - 1:
                 break
             else:
                 print("Come on, you need at least 1 sample outside your trainset and validation set.")
@@ -369,3 +381,28 @@ if __name__ == "__main__":
     
     print "Finally datasets are done! you'll find train_set.npy and the others."
     print "Now help me to write also the configuration file. This file is made to describe what is the content of the dataset, so you can remember it.\nI'm asking you just a couple of minutes more, don't worry"
+    
+    def strSeconds(seconds):
+        m, s = divmod(seconds, 60)
+        h, m = divmod(m, 60)
+        d, h =divmod(h, 24)
+        return "%d days and %d:%02d:%02d" % (d, h, m, s)
+    
+    comment = raw_input("Write a short comment for theese dataset: ")
+    
+    config = {
+        "duration": tot_duration,
+        "tick_time": mean_duration,
+        "duration_str": strSeconds(tot_duration),
+        "tick_time_str": strSeconds(mean_duration),
+        "comment": comment,
+        "n_serie": len(datasets),
+        "min_commission" : min_commission,
+        "max_commission" : max_commission,
+        "commission_rate" : per_commission
+    }
+
+    with open('confg.json', 'w') as outfile:
+        json.dump(config, outfile)
+    
+    print "Dataset generation END. Enjoy your day :)"
