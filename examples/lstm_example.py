@@ -6,13 +6,13 @@ from optimizer.lstm import LSTMNet
 
 print "Loading dataset"
 
-""" If you don't want to try with long series (space and time consuming), try this
-train_set = np.load("dataset/forex/ds1/train_set.npy")[:,:10,:]
-validation_set = np.load("dataset/forex/ds1/validation_set.npy")[:,:10,:]"""
-
-
 train_set = np.load("dataset/forex/ds1/train_set.npy")
 validation_set = np.load("dataset/forex/ds1/validation_set.npy")
+
+#very short sequence for debugging purpose
+"""
+train_set = train_set[:,:50,:]
+validation_set = validation_set[:,:50,:]"""
 
 n_series = 1
 n_features = 2    #timing & volume
@@ -33,4 +33,5 @@ opt = LSTMNet(config, train_set, validation_set, n_series, n_features)
 
 print "Learning started"
 for i in xrange(0,100):
-    print "Epoch" , i, ":", opt.learn()
+    out_ = opt.learn()
+    print "Epoch" , i, ":", "train gain:", out_[0], "validation gain:", out_[1]
