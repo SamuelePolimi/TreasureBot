@@ -18,6 +18,13 @@ Probably everybody who studied machine learning thought how to use it to solve f
     python utils/csvToNpy.py
 (How to generate a proper dataset)
 
+## Where to retreive Csv to use with csvToNpy.py?
+
+[https://www.dukascopy.com/swiss/english/marketwatch/historical/](https://www.dukascopy.com/swiss/english/marketwatch/historical/)
+
+From this website you can download different dataset with different precision (hourly, daily, evenevery minute or second).
+With csvToNpy you can "merge" different datasets (the program will sincronize the dataset, so will be good to choose the same date-time period for the datasets).
+
 ## TODO LIST
 
 TODO List:
