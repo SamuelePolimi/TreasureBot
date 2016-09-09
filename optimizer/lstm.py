@@ -43,15 +43,24 @@ import tensorflow as tf
 def Block(input_, input_size, neuron_list,f, variables, dropout=1.):
     last_input = input_
     last_input_size = input_size
-    for neurons in neuron_list:
+    if len(variables) <= 0:
         std = 1./np.sqrt(input_size + 0.0)
-        W = tf.Variable(tf.random_normal([last_input_size,neurons],0.,std))
-        b = tf.Variable(tf.random_normal([neurons],0.,std))
+        for neurons in neuron_list:
+            W = tf.Variable(tf.random_normal([last_input_size,neurons],0.,std))
+            b = tf.Variable(tf.random_normal([neurons],0.,std))
+            variables.append(W)
+            variables.append(b)
+            last_input_size = neurons
+    i=0
+    last_input_size = input_size
+    for neurons in neuron_list:
+        W = variables[i]
+        b = variables[i+1]
+        i+=2
         last_input = f(tf.matmul(last_input, W) + b)
         last_input = tf.nn.dropout(last_input,dropout)
         last_input_size = neurons
-        variables.append(W)
-        variables.append(b)
+        
     return last_input
 
 #(content of the cell, real output)
@@ -61,13 +70,19 @@ def Lstm(input_, write_, reset_, output_, last_lstm):
 
 def Merge(input_list, dim_list, out_dim, f,variables):
     sum_ = np.zeros((1,out_dim))
+    if len(variables)<=0:
+        for input_, dim_ in zip(input_list, dim_list):
+            std = 1./np.sqrt(dim_ + 0.0)
+            W = tf.Variable(tf.random_normal([dim_,out_dim],0.,std))
+            variables.append(W)
+        b = tf.Variable(tf.random_normal([out_dim],0.,std))
+        variables.append(b)
+    i=0
     for input_, dim_ in zip(input_list, dim_list):
-        std = 1./np.sqrt(dim_ + 0.0)
-        W = tf.Variable(tf.random_normal([dim_,out_dim],0.,std))
+        W = variables[i]
+        i+=1
         sum_ = sum_ + tf.matmul(input_,W)
-        variables.append(W)
-    b = tf.Variable(tf.random_normal([out_dim],0.,std))
-    variables.append(b)
+    b = variables[i]
     return f(sum_+b)
     
 """
@@ -136,7 +151,6 @@ class LSTMNet(Optimizer):
         n_series = self.n_series
         features = self.features
         serie_length = self.serie_length
-        variables=[]
         
         # the last action performed (default is 0 - Neutral)
         old_action = 0.
@@ -173,29 +187,36 @@ class LSTMNet(Optimizer):
             # Merge of the input
             
             print "Unfold: ", t+1, "out of", serie_length
-
-            inputShared1 = Merge([self.norm_prices(Z[t]),self.norm_costs(C[t]),self.norm_features(F[t])],[n_series,n_series,features],n_series*2 + features,tf.tanh,variables)
-          
-            # Shared block 1: elaboration of the input
-            sharedBlock1 = Block(inputShared1, n_series*2 + features , [self.sharedBoxShape[1]]*self.sharedBoxShape[0], tf.tanh, variables, dropout=self.dropout)
+            self.inputShared1_var = []
+            inputShared1 = Merge([self.norm_prices(Z[t]),self.norm_costs(C[t]),self.norm_features(F[t])],[n_series,n_series,features],n_series*2 + features,tf.tanh,self.inputShared1_var)
             
+            self.sharedBlock1_var = []
+            # Shared block 1: elaboration of the input
+            sharedBlock1 = Block(inputShared1, n_series*2 + features , [self.sharedBoxShape[1]]*self.sharedBoxShape[0], tf.tanh, self.sharedBlock1_var , dropout=self.dropout)
+            
+            self.inputShared2_var = []
             # Features given by shared1 and lstm
             inputShared2 = Merge([sharedBlock1, lstm_out]
                 ,[self.sharedBoxShape[1],self.nLSTMCells]
-                , self.sharedBoxShape[1] ,tf.tanh, variables)   
+                , self.sharedBoxShape[1] ,tf.tanh, self.inputShared2_var)   
 
-
-            sharedBlock2 = Block(inputShared2, self.sharedBoxShape[1], [self.sharedBoxShape[1]] * self.sharedBoxShape[0], tf.tanh, variables, dropout=self.dropout)
+            self.sharedBlock2_var = []
+            sharedBlock2 = Block(inputShared2, self.sharedBoxShape[1], [self.sharedBoxShape[1]] * self.sharedBoxShape[0], tf.tanh, self.sharedBlock2_var, dropout=self.dropout)
             
             # Each block represent a gate for the LSTM Cells
-            block1 = Block(sharedBlock2, self.sharedBoxShape[1], [self.blocksShape[1]] * self.blocksShape[0] + [self.nLSTMCells], tf.tanh, variables, dropout=self.dropout)
-            block2 = Block(sharedBlock2, self.sharedBoxShape[1], [self.blocksShape[1]] * self.blocksShape[0] + [self.nLSTMCells], tf.tanh, variables, dropout=self.dropout)
-            block3 = Block(sharedBlock2, self.sharedBoxShape[1], [self.blocksShape[1]] * self.blocksShape[0] + [self.nLSTMCells], tf.tanh, variables, dropout=self.dropout)
-            block4 = Block(sharedBlock2, self.sharedBoxShape[1], [self.blocksShape[1]] * self.blocksShape[0] + [self.nLSTMCells], tf.tanh, variables, dropout=self.dropout)
+            self.block1_var = []
+            self.block2_var = []
+            self.block3_var = []
+            self.block4_var = []            
+            block1 = Block(sharedBlock2, self.sharedBoxShape[1], [self.blocksShape[1]] * self.blocksShape[0] + [self.nLSTMCells], tf.tanh, self.block1_var, dropout=self.dropout)
+            block2 = Block(sharedBlock2, self.sharedBoxShape[1], [self.blocksShape[1]] * self.blocksShape[0] + [self.nLSTMCells], tf.tanh, self.block2_var, dropout=self.dropout)
+            block3 = Block(sharedBlock2, self.sharedBoxShape[1], [self.blocksShape[1]] * self.blocksShape[0] + [self.nLSTMCells], tf.tanh, self.block3_var, dropout=self.dropout)
+            block4 = Block(sharedBlock2, self.sharedBoxShape[1], [self.blocksShape[1]] * self.blocksShape[0] + [self.nLSTMCells], tf.tanh, self.block4_var, dropout=self.dropout)
             
             #LSTM cells
             lstm, lstm_out = Lstm(block1, block2, block3, block4, lstm)
-            outerBlock = Block(lstm_out, self.nLSTMCells, [self.decisionBlockShape[1]] * self.decisionBlockShape[0] + [n_series], tf.tanh, variables, dropout=self.dropout)
+            self.outerBlock_var = []
+            outerBlock = Block(lstm_out, self.nLSTMCells, [self.decisionBlockShape[1]] * self.decisionBlockShape[0] + [n_series], tf.tanh, self.outerBlock_var, dropout=self.dropout)
             
             out_temp = outerBlock
             out.append(outerBlock)
@@ -216,7 +237,6 @@ class LSTMNet(Optimizer):
         self.Z = Z
         self.C = C
         self.F = F
-        self.variables = variables
         
         init = tf.initialize_all_variables()
         self.session = tf.Session()
@@ -258,6 +278,81 @@ class LSTMNet(Optimizer):
         return (m_rew /(n_batch + 0.0), test_rew)
         
     def finalize(self):
-        raise("Not implemented yet")
-        return self.session.run(self.variables)
+        
+        n_series = self.n_series
+        features = self.features
+        
+        LSTM =  tf.placeholder("float", [None,self.nLSTMCells]) 
+        LSTM_OUT =  tf.placeholder("float", [None,self.nLSTMCells]) 
+        
+        Z = tf.placeholder("float", [None,n_series])
+        
+        #Stock cost
+        C = tf.placeholder("float", [None,n_series])
+                    
+        #Features
+        F = tf.placeholder("float", [None,features])
+
+
+        inputShared1 = Merge([self.norm_prices(Z),self.norm_costs(C),self.norm_features(F)],[n_series,n_series,features],n_series*2 + features,tf.tanh,self.inputShared1_var)
+        
+        # Shared block 1: elaboration of the input
+        sharedBlock1 = Block(inputShared1, n_series*2 + features , [self.sharedBoxShape[1]]*self.sharedBoxShape[0], tf.tanh, self.sharedBlock1_var , dropout=self.dropout)
+            
+
+        # Features given by shared1 and lstm
+        inputShared2 = Merge([sharedBlock1, LSTM_OUT]
+                ,[self.sharedBoxShape[1],self.nLSTMCells]
+                , self.sharedBoxShape[1] ,tf.tanh, self.inputShared2_var)   
+
+
+        sharedBlock2 = Block(inputShared2, self.sharedBoxShape[1], [self.sharedBoxShape[1]] * self.sharedBoxShape[0], tf.tanh, self.sharedBlock2_var, dropout=self.dropout)
+            
+        # Each block represent a gate for the LSTM Cells
+        
+        block1 = Block(sharedBlock2, self.sharedBoxShape[1], [self.blocksShape[1]] * self.blocksShape[0] + [self.nLSTMCells], tf.tanh, self.block1_var, dropout=self.dropout)
+        block2 = Block(sharedBlock2, self.sharedBoxShape[1], [self.blocksShape[1]] * self.blocksShape[0] + [self.nLSTMCells], tf.tanh, self.block2_var, dropout=self.dropout)
+        block3 = Block(sharedBlock2, self.sharedBoxShape[1], [self.blocksShape[1]] * self.blocksShape[0] + [self.nLSTMCells], tf.tanh, self.block3_var, dropout=self.dropout)
+        block4 = Block(sharedBlock2, self.sharedBoxShape[1], [self.blocksShape[1]] * self.blocksShape[0] + [self.nLSTMCells], tf.tanh, self.block4_var, dropout=self.dropout)
+            
+        #LSTM cells
+        lstm, lstm_out = Lstm(block1, block2, block3, block4, LSTM)
+        
+        outerBlock = Block(lstm_out, self.nLSTMCells, [self.decisionBlockShape[1]] * self.decisionBlockShape[0] + [n_series], tf.tanh, self.outerBlock_var, dropout=self.dropout)
+        
+        return Suggester(outerBlock,lstm, lstm_out, Z, C, F, LSTM, LSTM_OUT, self.nLSTMCells)
+
+class Suggester:
+    
+    def __init__(self,tf_model, lstm, lstm_out, Z, C, F, LSTM, LSTM_OUT, n_cells):
+        self.core = tf_model
+        self.lstm = lstm
+        self.lstm_out = lstm_out
+        self.Z = Z
+        self.C = C
+        self.F = F
+        self.LSTM = LSTM
+        self.LSTM_OUT = LSTM_OUT
+        
+        self.lstm_content = np.zeros((1,n_cells)).astype(np.float32)
+        self.lstm_out_content = np.zeros((1,n_cells)).astype(np.float32)
+        self.n_cells = n_cells
+        init = tf.initialize_all_variables()
+        self.session = tf.Session()
+        self.session.run(init)
+        
+    def getActions(self, z, c, f):
+        feed_dict = {}
+        feed_dict[self.Z] = z
+        feed_dict[self.C] = c
+        feed_dict[self.F] = f
+        feed_dict[self.LSTM] = self.lstm_content
+        feed_dict[self.LSTM_OUT] = self.lstm_out_content
+        out, self.lstm_content, self.lstm_out_content = self.session.run( [self.core, self.lstm, self.lstm_out],feed_dict=feed_dict)
+        return out
+        
+    def reset(self):
+        self.lstm_content = np.zeros((1,self.n_cells)).astype(np.float32)
+        self.lstm_out_content = np.zeros((1,self.n_cells)).astype(np.float32)
+    
         
