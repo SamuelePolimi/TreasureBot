@@ -7,8 +7,8 @@ from core.bot import Bot
 
 print "Loading dataset"
 
-train_set = np.load("dataset/forex/ds2/train_set.npy")
-validation_set = np.load("dataset/forex/ds2/validation_set.npy")
+train_set = np.load("dataset/forex/ds1/train_set.npy")
+validation_set = np.load("dataset/forex/ds1/validation_set.npy")
 
 #very short sequence for debugging purpose
 
