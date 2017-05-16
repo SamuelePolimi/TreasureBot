@@ -1,4 +1,4 @@
-
+import numpy as np
 
 class Bot:
     
@@ -26,7 +26,7 @@ class Bot:
         self.virtualCapitalHistory = []
 
 
-    def discretize(a):
+    def discretize(self,a):
         if a > 1./3.:
             return 1
         elif a > -1/3.:
@@ -59,7 +59,10 @@ class Bot:
         if(self.isOneToOne):
             pass
         else:
-            action = map(self.discretize, self.suggester.getActions(state))
+            action = map(self.discretize, self.suggester.getActions(state[np.newaxis, 0:self.n_Stock],
+                                                                    state[np.newaxis, self.n_Stock :
+                                                                          self.n_Stock * 2],
+                                                                    state[np.newaxis, self.n_Stock * 2:]))
             
         self.actionize(action)
         
