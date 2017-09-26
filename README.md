@@ -9,6 +9,7 @@ Probably everybody who studied machine learning thought how to use it to solve f
 * Python 2.7 or 3
 * TensorFlow 0.8.0
 * Numpy 1.11.0
+* Requests 2.18.4
 
 ## How to Run?
 
