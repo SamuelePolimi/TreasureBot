@@ -62,6 +62,8 @@ class SimpleTrading:
         self.actual_position = 0
         self.actual_position_time = 0
         self.gain = 0
+        self.sell_price = 0
+        self.buy_price = 0
         self.partial_gain = 0
         self.reward = 0
         self.open_sell = False
@@ -73,6 +75,9 @@ class SimpleTrading:
     def step(self, action):
         self.t = self.t + 1
         self.ema_update()
+
+        if self.open_sell:
+
         if self.actual_position == 1: # Long
             if action!=1:
                 if not self.open_buy:
@@ -102,18 +107,26 @@ class SimpleTrading:
         self.ema = (1 - self.ema_alpha) * self.ema + self.ema_alpha * (self.signal[self.t] - self.signal[self.t - 1])
 
     def place_buy(self, price):
-        if self.signal[self.t] <= price:
+        self.open_buy = True
+        self.buy_price = price
+
+    def try_to_buy(self):
+        if self.signal[self.t] <= self.buy_price:
             if np.random.rand() <= self.p:
                 self.buy()
                 if self.actual_position==2:
                     self.close_position()
 
-    def place_sell(self, price):
-        if self.signal[self.t] >= price:
+    def try_to_sell(self):
+        if self.signal[self.t] >= self.sell_price:
             if np.random.rand() <= self.p:
                 self.sell()
                 if self.actual_position==1:
                     self.close_position()
+
+    def place_sell(self, price):
+        self.open_sell = True
+        self.sell_price = price
 
 
     def close_position(self):
@@ -124,9 +137,11 @@ class SimpleTrading:
         self.actual_position = 0
 
     def buy(self):
+        self.open_buy = False
         self.gain -= self.signal[self.t]
         self.partial_gain -= self.signal[self.t]
 
     def sell(self):
+        self.open_sell = False
         self.gain += self.signal[self.t]
         self.partial_gain += self.signal[self.t]
