@@ -50,42 +50,87 @@ PlaceBuyOrder(price):
 class SimpleTrading:
 
     def __init__(self, signal, ema_alpha=(1.,0.5,0.25,0.125,0.0625), p=0.85, fee=0.2, v_fee_const=0.01, v_fee_rel=0):
+        """
+
+        :param signal: An one-dimensional numpy array
+        :type signal: np.ndarray
+        :param ema_alpha: a list (or tuple) of parameters for the exponential averages
+        :type ema_alpha: iterable
+        :param p: probability that a buy or a sell take place
+        :type p: float
+        :param fee: real fee of the broker
+        :type fee: float
+        :param v_fee_const: constant fee (virtual)
+        :type v_fee_const: float
+        :param v_fee_rel: relative fee (virtual)
+        :type v_fee_rel: float
+        """
+
         self.signal = signal
         self.ema_alpha = np.array(ema_alpha)
         self.p = p
         self.fee = fee
         self.v_fee_const = v_fee_const
         self.v_fee_rel = v_fee_rel
+
+        #Time (position in the signal)
         self.t = 1
+        #Moving averages
         self.ema = np.ones((len(ema_alpha))) * (self.signal[1] - self.signal[0])
+        #The price when I opened the position
         self.last_position_price = 0
+        #the current position
         self.actual_position = 0
+        #how long the current position has been opened
         self.actual_position_time = 0
+        #My total gain (or loss :/ )
         self.gain = 0
+        #the price which I wish to sell
         self.sell_price = 0
+        #the price which I wish to buy
         self.buy_price = 0
+        #the gain of my last 
         self.partial_gain = 0
+        #the current reward
         self.reward = 0
+        #is there a opened sell?
         self.open_sell = False
+        #is there a opened buy?
         self.open_buy = False
+
+        #Warm up the emas
         for _ in xrange(0,100):
             self.ema_update()
             self.t += 1
 
     def step(self, action):
+        """
+        Take a step
+        :param action: 0-Neutral, 1-Long, 2-Short
+        :return: state, reward
+        :rtype: tuple
+        """
         self.t = self.t + 1
+        #Update the ema's features
         self.ema_update()
 
-        if self.open_sell:
-
+        # If the action is different by the actual position, we need to try to close such position
         if self.actual_position == 1: # Long
             if action!=1:
                 if not self.open_buy:
+                    #try to close the position
                     self.place_sell(self.signal[self.t])
+                else:
+                    self.cancel_sell()
         elif self.actual_position == 2: # Short
             if action!=2:
                 if not self.open_sell:
+                    #try to close the position
                     self.place_buy(self.signal[self.t])
+                else:
+                    self.cancel_buy()
+
+        #If we are not neutral, we cannot open other position
         if self.actual_position == 0:
             if action==1: #Long
                 self.place_buy(self.signal[self.t])
@@ -114,6 +159,7 @@ class SimpleTrading:
         if self.signal[self.t] <= self.buy_price:
             if np.random.rand() <= self.p:
                 self.buy()
+                # if we are buying and we are in short position, means that we are closing that position
                 if self.actual_position==2:
                     self.close_position()
 
@@ -121,6 +167,7 @@ class SimpleTrading:
         if self.signal[self.t] >= self.sell_price:
             if np.random.rand() <= self.p:
                 self.sell()
+                # if we are selling and we are in long position, means that we are closing that position
                 if self.actual_position==1:
                     self.close_position()
 
@@ -138,10 +185,22 @@ class SimpleTrading:
 
     def buy(self):
         self.open_buy = False
+        self.buy_price = 0
         self.gain -= self.signal[self.t]
         self.partial_gain -= self.signal[self.t]
 
     def sell(self):
         self.open_sell = False
+        self.sell_price = 0
         self.gain += self.signal[self.t]
         self.partial_gain += self.signal[self.t]
+
+    def cancel_sell(self):
+        self.actual_position = 0
+        self.open_sell = False
+        self.sell_price = 0
+
+    def cancel_buy(self):
+        self.actual_position = 0
+        self.open_buy = False
+        self.buy_price = 0
