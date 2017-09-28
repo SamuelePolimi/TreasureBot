@@ -7,6 +7,7 @@ import time
 import hmac
 import hashlib
 import json
+import math
 
 
 class TheRockTradingBroker:
@@ -106,17 +107,47 @@ class TheRockTradingBroker:
         url = self.endPointUrl + 'funds/tickers'
         return requests.get(url, headers=self.get_headers(url, auth_required=False), timeout=10).json()
 
-    def trades(self, market_id):
+    def last_trade(self, market_id):
         """
-        Get last 200 trades for a choosen market.
+        Get last trade for a choosen market.
 
         Args:
             market_id (str): The market ID ('BTCEUR', 'BTCUSD', PPCBTC', 'LTCEUR', ...)
         Returns:
             json: The json representation of the trades related to the specified market.
         """
-        url = self.endPointUrl + 'funds/'+market_id.upper()+'/trades?per_page=200'
+        url = self.endPointUrl + 'funds/'+market_id.upper()+'/trades?per_page=1'
         return requests.get(url, headers=self.get_headers(url, auth_required=False), timeout=10).json()
+
+    def trades(self, market_id, before, after):
+        """
+        Get last trades for a choosen market for a specific interval.
+
+        Args:
+            market_id (str): The market ID ('BTCEUR', 'BTCUSD', PPCBTC', 'LTCEUR', ...)
+            before (str): Get only trades executed after a certain timestamp ( format %Y-%m-%dT%H:%M:%S%Z ex. 2015-02-06T08:47:26Z )
+            after (str): Get only trades executed after a certain timestamp ( format %Y-%m-%dT%H:%M:%S%Z ex. 2015-02-06T08:47:26Z )
+        Returns:
+            json: The json representation of the trades related to the specified market.
+        """
+        results_per_page = 200
+        page_index = 1
+        last_page = 1
+        trade_list = []
+
+        while page_index <= last_page:
+            url = self.endPointUrl + 'funds/' + market_id.upper() + '/trades?per_page=' + str(
+                results_per_page) + '&before=' + before + '&after=' + after + '&page=' + str(page_index)
+            request = requests.get(url, headers=self.get_headers(url, auth_required=False), timeout=10).json()
+
+            # fire the first request and get metadata and first page of results
+            if page_index == 1:
+                last_page = int(math.ceil(float(request['meta']['total_count']) / results_per_page))
+
+            trade_list += request['trades']
+            page_index += 1
+
+        return trade_list
 
     # Market API
 
@@ -230,4 +261,4 @@ class TheRockTradingBroker:
 import pprint
 brokerTest = TheRockTradingBroker('4e7acaa8856b38818f80b19282ee8e32dc9a0580', 'c71e3cccac1bcf81fb091baef14e86e06d779667')
 
-pprint.pprint(brokerTest.orders('BTCEUR'))
+pprint.pprint(brokerTest.trades('BTCEUR', '2017-09-28T20:21:59.000Z', '1970-01-01T12:00:00.000Z'))
