@@ -89,7 +89,7 @@ class SimpleTrading:
         self.sell_price = 0
         #the price which I wish to buy
         self.buy_price = 0
-        #the gain of my last 
+        #the gain of my last
         self.partial_gain = 0
         #the current reward
         self.reward = 0

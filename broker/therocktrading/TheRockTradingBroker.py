@@ -8,7 +8,7 @@ import hmac
 import hashlib
 import json
 import math
-
+import numpy as np
 
 class TheRockTradingBroker:
 
@@ -119,7 +119,7 @@ class TheRockTradingBroker:
         url = self.endPointUrl + 'funds/'+market_id.upper()+'/trades?per_page=1'
         return requests.get(url, headers=self.get_headers(url, auth_required=False), timeout=10).json()
 
-    def trades(self, market_id, before, after):
+    def trades(self, market_id, before, after, file_name):
         """
         Get last trades for a choosen market for a specific interval.
 
@@ -133,8 +133,8 @@ class TheRockTradingBroker:
         results_per_page = 200
         page_index = 1
         last_page = 1
-        trade_list = []
 
+        np.save(file_name,np.zeros([0]))
         while page_index <= last_page:
             url = self.endPointUrl + 'funds/' + market_id.upper() + '/trades?per_page=' + str(
                 results_per_page) + '&before=' + before + '&after=' + after + '&page=' + str(page_index)
@@ -144,10 +144,13 @@ class TheRockTradingBroker:
             if page_index == 1:
                 last_page = int(math.ceil(float(request['meta']['total_count']) / results_per_page))
 
-            trade_list += request['trades']
+            trade_list = request['trades']
+            prew_data = np.load(file_name)
+            price_list = map(lambda x: x['price'], trade_list)
+            price_list.reverse()
+            np.save(file_name,price_list+prew_data.tolist())
             page_index += 1
 
-        return trade_list
 
     # Market API
 
@@ -256,9 +259,3 @@ class TheRockTradingBroker:
             headers.update({'X-TRT-KEY': self.api_key, 'X-TRT-SIGN': signature, 'X-TRT-NONCE': nonce})
 
         return headers
-
-
-import pprint
-brokerTest = TheRockTradingBroker('4e7acaa8856b38818f80b19282ee8e32dc9a0580', 'c71e3cccac1bcf81fb091baef14e86e06d779667')
-
-pprint.pprint(brokerTest.trades('BTCEUR', '2017-09-28T20:21:59.000Z', '1970-01-01T12:00:00.000Z'))

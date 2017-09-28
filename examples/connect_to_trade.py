@@ -7,6 +7,7 @@ credentials.json has the following structure
 }
 """
 import json
+import numpy as np
 import pprint
 from broker.therocktrading.TheRockTradingBroker import TheRockTradingBroker
 
@@ -15,9 +16,5 @@ with open('credentials.json') as json_data:
 
 therock = TheRockTradingBroker(credential['KEY'],credential['SECRET'])
 
-
-pprint.pprint(therock.funds())
-pprint.pprint(therock.tickers())
-pprint.pprint(therock.orderbook("BTCEUR"))
-pprint.pprint(therock.user_trades("BTCEUR"))
-pprint.pprint(therock.orders("BTCEUR"))
+therock.trades('BTCEUR', '2017-09-28T20:21:59.000Z', '2017-09-26T12:00:00.000Z',"puppy.npy")
+print np.load("puppy.npy")
