@@ -173,7 +173,7 @@ class TheRockTradingBroker:
 
         Args:
             market_id (str): The market ID ('BTCEUR', 'BTCUSD', PPCBTC', 'LTCEUR', ...)
-            side (str): 'buy' or 'sell' order.
+            side (str): 'buy', 'sell', 'close_long', 'close_short' order.
             amount (str): The amount you want to buy or sell.
             price (str): The price of your order to be filled.
         Returns:
@@ -221,8 +221,13 @@ class TheRockTradingBroker:
         headers = {'content-type': 'application/json'}
         if auth_required:
             nonce = str(int(time.time() * 1000000))
-            signature = hmac.new(self.secret, msg=(nonce+url), digestmod=hashlib.sha512).hexdigest()
+            signature = hmac.new(self.secret.encode(), msg=(nonce+url).encode(), digestmod=hashlib.sha512).hexdigest()
             headers.update({'X-TRT-KEY': self.api_key, 'X-TRT-SIGN': signature, 'X-TRT-NONCE': nonce})
 
         return headers
 
+
+import pprint
+brokerTest = TheRockTradingBroker('4e7acaa8856b38818f80b19282ee8e32dc9a0580', 'c71e3cccac1bcf81fb091baef14e86e06d779667')
+
+pprint.pprint(brokerTest.orders('BTCEUR'))
