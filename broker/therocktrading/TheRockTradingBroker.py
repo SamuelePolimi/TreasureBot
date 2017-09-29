@@ -144,7 +144,11 @@ class TheRockTradingBroker:
             # fire the first request and get metadata and first page of results
             if page_index == 1:
                 last_page = int(math.ceil(float(request['meta']['total_count']) / results_per_page))
-
+                print "Number of pages to download:", last_page
+                print "Progress 0/" + str(last_page)+ ": .",
+            if page_index%10==0:
+                print "\nProgress " + str(page_index) + "/" + str(last_page)+ ":",
+            print ".",
             #Get the list of prices
             trade_list = request['trades']
             numpy_file = np.load(file_name)
@@ -174,6 +178,7 @@ class TheRockTradingBroker:
         fprice = content.item().get('price')
         fdt = map(lambda x: (x[1]-x[0]).total_seconds(), zip(fdate[:-1],fdate[1:]))
         np.save(file_name,{'amount':famount,'price':fprice,'time':np.array(fdt)})
+        print ". End."
 
 
     # Market API
