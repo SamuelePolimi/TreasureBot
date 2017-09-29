@@ -120,7 +120,7 @@ class TheRockTradingBroker:
         url = self.endPointUrl + 'funds/'+market_id.upper()+'/trades?per_page=1'
         return requests.get(url, headers=self.get_headers(url, auth_required=False), timeout=10).json()
 
-    def trades(self, market_id, before, after, file_name):
+    def trades(self, market_id, before, after, file_name, save_every_page=False):
         """
         Get last trades for a choosen market for a specific interval.
 
@@ -135,7 +135,10 @@ class TheRockTradingBroker:
         page_index = 1
         last_page = 1
 
-        np.save(file_name,{'date':np.zeros([0]),'amount':np.zeros([0]),'price':np.zeros([0])})
+        prew_price = []
+        prew_date = []
+        prew_amount = []
+
         while page_index <= last_page:
             url = self.endPointUrl + 'funds/' + market_id.upper() + '/trades?per_page=' + str(
                 results_per_page) + '&before=' + before + '&after=' + after + '&page=' + str(page_index)
@@ -152,9 +155,6 @@ class TheRockTradingBroker:
             #Get the list of prices
             trade_list = request['trades']
             numpy_file = np.load(file_name)
-            prew_price = numpy_file.item().get('price')
-            prew_date = numpy_file.item().get('date')
-            prew_amount = numpy_file.item().get('amount')
 
             price_list = map(lambda x: x['price'], trade_list)
             price_list.reverse()
@@ -167,17 +167,19 @@ class TheRockTradingBroker:
             amount_list  = map(lambda a: a['amount'], trade_list)
             amount_list.reverse()
 
-            np.save(file_name,{'price':np.array(price_list+prew_price.tolist()),
-                    'amount':np.array(amount_list+prew_amount.tolist()),
-                    'date':np.array(date_list+prew_date.tolist())})
+            prew_price = price_list+prew_price
+            prew_amount = amount_list+prew_amount
+            prew_date = date_list+prew_date
+            if save_every_page:
+                np.save(file_name,{'price':np.array(prew_price),
+                        'amount':np.array(prew_amount),
+                        'date':np.array(prew_date)})
 
             page_index += 1
-        content = np.load(file_name)
-        famount = content.item().get('amount')
-        fdate = content.item().get('date')
-        fprice = content.item().get('price')
-        fdt = map(lambda x: (x[1]-x[0]).total_seconds(), zip(fdate[:-1],fdate[1:]))
-        np.save(file_name,{'amount':famount,'price':fprice,'time':np.array(fdt)})
+
+
+        fdt = map(lambda x: (x[1]-x[0]).total_seconds(), zip(prew_date[:-1],prew_date[1:]))
+        np.save(file_name,{'amount': np.array(prew_amount),'price':np.array(prew_price),'time':np.array(fdt)})
         print ". End."
 
 
