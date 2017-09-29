@@ -5,7 +5,8 @@ import matplotlib.pyplot as plt
 
 market = "BTCEUR"
 signal = np.load("../dataset/" + market + "/test.npy")
-env = SimpleTrading(FinancialSignal(signal.item().get("price"),signal.item().get('time')))
+print signal
+env = SimpleTrading(FinancialSignal(signal.item().get("price"),signal.item().get('time'),frequency=1.))
 
 my_signal = []
 my_wallet = []

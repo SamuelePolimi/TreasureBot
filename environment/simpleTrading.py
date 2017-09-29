@@ -73,18 +73,18 @@ class Order:
         self.open = True
 
     def refresh(self, environment):
-        price = environment.signal.get_price()
-        logic = [lambda x,y: x<= y, lambda x,y: x>=y]
-        if logic[self.type](price, self.price):
-            if np.random.rand() < environment.p:
-                # TODO: check if the fee formula is correct
-                environment.account.budget += (self.type*2-1) * price - abs(price) * environment.fee
-                self.open = False
+        if self.open:
+            price = environment.signal.get_price()
+            logic = [lambda x,y: x<= y, lambda x,y: x>=y]
+            if logic[self.type](price, self.price):
+                if np.random.rand() < environment.p:
+                    # TODO: check if the fee formula is correct
+                    environment.account.update((self.type*2-1) * price - abs(price) * environment.fee)
 
 
 class Position:
 
-    def __init__(self, type, price, amount=1):
+    def __init__(self, type, price, actual_budget, amount=1):
         self.type = type
         self.price = price
         self.duration = 0
@@ -92,29 +92,38 @@ class Position:
         self.order = Order(SELL if type == SHORT else BUY,price,amount)
         self.open = True
         self.closing = False
+        self.start_budget = actual_budget
+        self.gain = 0
 
     def refresh(self, environment):
         price = environment.signal.get_price()
+
+        if self.closing:
+            if not self.order is None:
+                if self.order.type == (SELL if self.type == SHORT else BUY):
+                    self._close(environment)
+                else:
+                    self.order.refresh(environment)
+                    if not self.order.open:
+                        self._close(environment)
+
+            else:
+                self.order = Order(BUY if self.type == SHORT else SELL, price, self.amount)
+                self.order.refresh(environment)
+                if not self.order.open:
+                    self._close(environment)
+
+            return
 
         if not self.order is None:
             self.order.refresh(environment)
             if not self.order.open:
                 self.order = None
 
-        if self.closing:
-            if self.order is None:
-                self.order = Order(BUY if self.type == SHORT else SELL, price, self.amount)
-                self.order.refresh(environment)
-
-            if self.order.type == (SELL if self.type == SHORT else BUY):
-                self.order = None
-                self.open = False
-            else:
-                if not self.order.open:
-                    self.order = None
-                    self.open = False
-
-
+    def _close(self,environment):
+        self.order = None
+        self.open = False
+        self.gain = environment.account.budget - self.start_budget
     def try_close(self):
         self.closing = True
 
@@ -184,7 +193,7 @@ class SimpleTrading:
                 self.position = None
 
         if self.position is None and action!=NEUTRAL:
-            self.position = Position(action, self.signal.get_price())
+            self.position = Position(action, self.signal.get_price(), self.account.budget)
 
         while not self.signal.tick():
             if self.position is not None:
