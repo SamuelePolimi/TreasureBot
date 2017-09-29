@@ -9,6 +9,7 @@ import hashlib
 import json
 import math
 import numpy as np
+from datetime import datetime
 
 class TheRockTradingBroker:
 
@@ -134,7 +135,7 @@ class TheRockTradingBroker:
         page_index = 1
         last_page = 1
 
-        np.save(file_name,np.zeros([0]))
+        np.save(file_name,{'date':np.zeros([0]),'amount':np.zeros([0]),'price':np.zeros([0])})
         while page_index <= last_page:
             url = self.endPointUrl + 'funds/' + market_id.upper() + '/trades?per_page=' + str(
                 results_per_page) + '&before=' + before + '&after=' + after + '&page=' + str(page_index)
@@ -144,12 +145,35 @@ class TheRockTradingBroker:
             if page_index == 1:
                 last_page = int(math.ceil(float(request['meta']['total_count']) / results_per_page))
 
+            #Get the list of prices
             trade_list = request['trades']
-            prew_data = np.load(file_name)
+            numpy_file = np.load(file_name)
+            prew_price = numpy_file.item().get('price')
+            prew_date = numpy_file.item().get('date')
+            prew_amount = numpy_file.item().get('amount')
+
             price_list = map(lambda x: x['price'], trade_list)
             price_list.reverse()
-            np.save(file_name,price_list+prew_data.tolist())
+
+            #Get the dates
+            date_list = map(lambda d: datetime.strptime(d['date'],"%Y-%m-%dT%H:%M:%S.%fZ"), trade_list)
+            date_list.reverse()
+
+            #Get the volume
+            amount_list  = map(lambda a: a['amount'], trade_list)
+            amount_list.reverse()
+
+            np.save(file_name,{'price':np.array(price_list+prew_price.tolist()),
+                    'amount':np.array(amount_list+prew_amount.tolist()),
+                    'date':np.array(date_list+prew_date.tolist())})
+
             page_index += 1
+        content = np.load(file_name)
+        famount = content.item().get('amount')
+        fdate = content.item().get('date')
+        fprice = content.item().get('price')
+        fdt = map(lambda x: (x[1]-x[0]).total_seconds(), zip(fdate[:-1],fdate[1:]))
+        np.save(file_name,{'amount':famount,'price':fprice,'time':np.array(fdt)})
 
 
     # Market API

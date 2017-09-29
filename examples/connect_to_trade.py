@@ -6,6 +6,7 @@ credentials.json has the following structure
 "SECRET":"mysecret"
 }
 """
+from datetime import datetime
 import json
 import numpy as np
 import pprint
