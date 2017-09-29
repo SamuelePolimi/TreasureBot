@@ -46,161 +46,151 @@ PlaceBuyOrder(price):
         Buy()
   nextTransition()
 """
+import numpy as np
+
+NEUTRAL = 0
+LONG = 1
+SHORT = 2
+
+BUY = 0
+SELL = 1
+
+
+class Action:
+
+    def __init__(self, duration, gain, type):
+        self.duration = duration
+        self.gain = gain
+        self.type = type
+
+
+class Order:
+
+    def __init__(self, type, price, amount=1):
+        self.type = type
+        self.price = price
+        self.amount = amount
+        self.open = True
+
+    def refresh(self, environment):
+        price = environment.signal.get_price()
+        logic = [lambda x,y: x<= y, lambda x,y: x>=y]
+        if logic[self.type](price, self.price):
+            if np.random.rand() < environment.p:
+                # TODO: check if the fee formula is correct
+                environment.account.budget += (self.type*2-1) * price - abs(price) * environment.fee
+                self.open = False
+
+
+class Position:
+
+    def __init__(self, type, price, amount=1):
+        self.type = type
+        self.price = price
+        self.duration = 0
+        self.amount = amount
+        self.order = Order(SELL if type == SHORT else BUY,price,amount)
+        self.open = True
+        self.closing = False
+
+    def refresh(self, environment):
+        price = environment.signal.get_price()
+
+        if not self.order is None:
+            self.order.refresh(environment)
+            if not self.order.open:
+                self.order = None
+
+        if self.closing:
+            if self.order is None:
+                self.order = Order(BUY if self.type == SHORT else SELL, price, self.amount)
+                self.order.refresh(environment)
+
+            if self.order.type == (SELL if self.type == SHORT else BUY):
+                self.order = None
+                self.open = False
+            else:
+                if not self.order.open:
+                    self.order = None
+                    self.open = False
+
+
+    def try_close(self):
+        self.closing = True
+
+
+class Account:
+
+    def __init__(self, budget=0):
+        self.budget = 0
+
+    def update(self, value):
+        self.budget += value
+
+
+class Timer:
+
+    def __init__(self):
+        self.time = 0
+
+    def update(self, value):
+        self.time += value
+
+class FinancialSignal:
+
+    def __init__(self, price, time, frequency=10):
+
+        self.price = price
+        self.time = time
+        self.frequency = frequency
+        self.delta_my_time = 0
+        self.delta_signal_time = time[0]
+        self.index = 0
+        self.end = False
+
+    def tick(self, timers=()):
+
+        if self.delta_my_time >= self.delta_signal_time:
+            self.delta_my_time -= self.delta_signal_time
+            self.index += 1
+            if self.index >= len(self.price):
+                self.end = True
+            return False #Not another action available yet
+        else:
+            self.delta_my_time += self.frequency
+            for timer in timers:
+                timer.update(self.frequency)
+            return True #Another action available
+
+    def get_price(self):
+        return self.price[self.index]
+
 
 class SimpleTrading:
 
-    def __init__(self, signal, ema_alpha=(1.,0.5,0.25,0.125,0.0625), p=0.85, fee=0.2, v_fee_const=0.01, v_fee_rel=0):
-        """
-
-        :param signal: An one-dimensional numpy array
-        :type signal: np.ndarray
-        :param ema_alpha: a list (or tuple) of parameters for the exponential averages
-        :type ema_alpha: iterable
-        :param p: probability that a buy or a sell take place
-        :type p: float
-        :param fee: real fee of the broker
-        :type fee: float
-        :param v_fee_const: constant fee (virtual)
-        :type v_fee_const: float
-        :param v_fee_rel: relative fee (virtual)
-        :type v_fee_rel: float
-        """
-
+    def __init__(self, signal, budget=0, p=0.8, fee=0.002):
         self.signal = signal
-        self.ema_alpha = np.array(ema_alpha)
+        self.account = Account(budget)
         self.p = p
         self.fee = fee
-        self.v_fee_const = v_fee_const
-        self.v_fee_rel = v_fee_rel
-
-        #Time (position in the signal)
-        self.t = 1
-        #Moving averages
-        self.ema = np.ones((len(ema_alpha))) * (self.signal[1] - self.signal[0])
-        #The price when I opened the position
-        self.last_position_price = 0
-        #the current position
-        self.actual_position = 0
-        #how long the current position has been opened
-        self.actual_position_time = 0
-        #My total gain (or loss :/ )
-        self.gain = 0
-        #the price which I wish to sell
-        self.sell_price = 0
-        #the price which I wish to buy
-        self.buy_price = 0
-        #the gain of my last
-        self.partial_gain = 0
-        #the current reward
-        self.reward = 0
-        #is there a opened sell?
-        self.open_sell = False
-        #is there a opened buy?
-        self.open_buy = False
-
-        #Warm up the emas
-        for _ in xrange(0,100):
-            self.ema_update()
-            self.t += 1
+        self.position = None
 
     def step(self, action):
-        """
-        Take a step
-        :param action: 0-Neutral, 1-Long, 2-Short
-        :return: state, reward
-        :rtype: tuple
-        """
-        self.t = self.t + 1
-        #Update the ema's features
-        self.ema_update()
+        if not self.position is None:
+            if action != self.position.type:
+                self.position.try_close()
+                self.position.refresh(self)
+            if not self.position.open:
+                self.position = None
 
-        # If the action is different by the actual position, we need to try to close such position
-        if self.actual_position == 1: # Long
-            if action!=1:
-                if not self.open_buy:
-                    #try to close the position
-                    self.place_sell(self.signal[self.t])
-                else:
-                    self.cancel_sell()
-        elif self.actual_position == 2: # Short
-            if action!=2:
-                if not self.open_sell:
-                    #try to close the position
-                    self.place_buy(self.signal[self.t])
-                else:
-                    self.cancel_buy()
+        if self.position is None and action!=NEUTRAL:
+            self.position = Position(action, self.signal.get_price())
 
-        #If we are not neutral, we cannot open other position
-        if self.actual_position == 0:
-            if action==1: #Long
-                self.place_buy(self.signal[self.t])
-                self.actual_position = 1
-                self.last_position_price = self.signal[self.t]
-            if action==2: #Short
-                self.place_sell(self.signal[self.t])
-                self.actual_position = 2
-                self.last_position_price = self.signal[self.t]
-        else:
-            self.actual_position_time += 0.01
-
-        r = self.reward
-        self.reward = 0
-        state = np.concatenate(([self.signal[self.t]],self.ema,[self.actual_position_time,self.actual_position_time, self.actual_position -1]))
-        return state,r
-
-    def ema_update(self):
-        self.ema = (1 - self.ema_alpha) * self.ema + self.ema_alpha * (self.signal[self.t] - self.signal[self.t - 1])
-
-    def place_buy(self, price):
-        self.open_buy = True
-        self.buy_price = price
-
-    def try_to_buy(self):
-        if self.signal[self.t] <= self.buy_price:
-            if np.random.rand() <= self.p:
-                self.buy()
-                # if we are buying and we are in short position, means that we are closing that position
-                if self.actual_position==2:
-                    self.close_position()
-
-    def try_to_sell(self):
-        if self.signal[self.t] >= self.sell_price:
-            if np.random.rand() <= self.p:
-                self.sell()
-                # if we are selling and we are in long position, means that we are closing that position
-                if self.actual_position==1:
-                    self.close_position()
-
-    def place_sell(self, price):
-        self.open_sell = True
-        self.sell_price = price
-
-
-    def close_position(self):
-        self.actual_position_time = 0
-        self.last_position_price = 0
-        self.reward = self.partial_gain
-        self.partial_gain = 0
-        self.actual_position = 0
-
-    def buy(self):
-        self.open_buy = False
-        self.buy_price = 0
-        self.gain -= self.signal[self.t]
-        self.partial_gain -= self.signal[self.t]
-
-    def sell(self):
-        self.open_sell = False
-        self.sell_price = 0
-        self.gain += self.signal[self.t]
-        self.partial_gain += self.signal[self.t]
-
-    def cancel_sell(self):
-        self.actual_position = 0
-        self.open_sell = False
-        self.sell_price = 0
-
-    def cancel_buy(self):
-        self.actual_position = 0
-        self.open_buy = False
-        self.buy_price = 0
+        while not self.signal.tick():
+            if self.position is not None:
+                self.position.refresh(self)
+                if not self.position.open:
+                    self.position = None
+            if self.signal.end:
+                return False
+        return True
