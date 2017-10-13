@@ -154,7 +154,6 @@ class TheRockTradingBroker:
             print ".",
             #Get the list of prices
             trade_list = request['trades']
-            numpy_file = np.load(file_name)
 
             price_list = map(lambda x: x['price'], trade_list)
             price_list.reverse()
